@@ -6,3 +6,10 @@ wandb/
 results/
 bsub_outputs/
 .hyperparameter_search_scripts_main/
+
+# local eval env (~5GB torch/transformers wheels) and HF cache
+.venv/
+.cache/
+
+# in-flight run artifacts (final eval_results.json/eval_responses.json committed explicitly)
+*.log

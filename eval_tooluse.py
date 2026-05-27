@@ -7,7 +7,33 @@ from datasets import Dataset, load_from_disk
 from transformers import AutoTokenizer
 import re
 from collections import Counter
+from string import Template
 from tqdm import tqdm
+
+
+# Mirrors TEACHER_TEMPLATE in experiment.py — kept here so eval_tooluse.py
+# stays self-contained. If experiment.py changes its template, change this too.
+TEACHER_TEMPLATE = Template("""
+$orig_content
+
+This is an example for a response to the question:
+$output_text
+
+Now answer with a response of your own, including the thinking process.
+""")
+
+
+def _format_golden_as_demo(golden_answer):
+    """Format a row's golden_answer (list of {Action, Action_Input} dicts) as the
+    Action:/Action Input: text a model is expected to emit. Used as the
+    matched-per-row demonstration for the teacher-ceiling experiment.
+    eval_data has no prefab golden_response string (unlike train_data), so we
+    synthesize one in the same shape.
+    """
+    parts = []
+    for step in golden_answer:
+        parts.append(f"Action: {step['Action']}\nAction Input: {step['Action_Input']}")
+    return "\n".join(parts)
 
 
 def parse_args():
@@ -30,6 +56,10 @@ def parse_args():
                         help="Dtype for hf engine. Defaults: cuda/mps=bfloat16, cpu=float32.")
     parser.add_argument("--max_samples", type=int, default=None,
                         help="Cap on number of eval samples (useful for smoke tests).")
+    parser.add_argument("--teacher_ceiling", action="store_true",
+                        help="Wrap each prompt with TEACHER_TEMPLATE using that row's own "
+                             "golden_answer as the matched demonstration. Measures the "
+                             "ICL-conditioned ceiling SDFT distills from (paper Sec 3.2).")
     return parser.parse_args()
 
 
@@ -87,19 +117,30 @@ def load_hf_model_and_tokenizer(model_path, device, dtype):
     return model, tokenizer
 
 
-def load_test_data(tokenizer):
-    """Load and prepare tooluse test dataset."""
+def load_test_data(tokenizer, teacher_ceiling=False):
+    """Load and prepare tooluse test dataset.
+
+    If teacher_ceiling=True, wrap each row's prompt with TEACHER_TEMPLATE using
+    that row's own golden_answer as the matched demonstration — the SDFT
+    teacher condition (NOT generic few-shot from train_data).
+    """
     data_dir = 'data/tooluse_data/eval_data'
     data = load_from_disk(data_dir).to_list()
-    
-    # Format prompts
+
     for example in data:
+        if teacher_ceiling:
+            content = TEACHER_TEMPLATE.substitute(
+                orig_content=example['prompt'],
+                output_text=_format_golden_as_demo(example['golden_answer']),
+            )
+        else:
+            content = example['prompt']
         example['prompt'] = tokenizer.apply_chat_template(
-            [{'role': 'user', 'content': example['prompt']}],
+            [{'role': 'user', 'content': content}],
             tokenize=False,
             add_generation_prompt=True
         )
-    
+
     return data
 
 
@@ -201,7 +242,9 @@ def main():
         model, tokenizer = load_hf_model_and_tokenizer(args.model_path, device, dtype)
 
     # Load and (optionally) cap test data
-    test_data = load_test_data(tokenizer)
+    test_data = load_test_data(tokenizer, teacher_ceiling=args.teacher_ceiling)
+    if args.teacher_ceiling:
+        print("Teacher-ceiling mode: each row wrapped with its own golden_answer as demonstration.")
     if args.max_samples is not None:
         test_data = test_data[: args.max_samples]
         print(f"Capped eval set to first {len(test_data)} samples (--max_samples).")
@@ -249,6 +292,7 @@ def main():
             "device": device,
             "dtype": str(dtype),
             "max_samples": args.max_samples,
+            "teacher_ceiling": args.teacher_ceiling,
         }
     }
 

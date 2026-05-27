@@ -23,17 +23,22 @@ Now answer with a response of your own, including the thinking process.
 """)
 
 
-def _format_golden_as_demo(golden_answer):
-    """Format a row's golden_answer (list of {Action, Action_Input} dicts) as the
-    Action:/Action Input: text a model is expected to emit. Used as the
-    matched-per-row demonstration for the teacher-ceiling experiment.
-    eval_data has no prefab golden_response string (unlike train_data), so we
-    synthesize one in the same shape.
+def _format_demo_from_row(row):
+    """Build the matched-per-row demonstration string for teacher-ceiling.
+
+    Prefer the dataset's own golden_response (real Thought+Action+Action Input
+    strings, what the SDFT trainer in main.py feeds the teacher). Fall back to
+    synthesizing Action+Input from golden_answer when golden_response is
+    absent (e.g. data/tooluse_data/eval_data has no golden_response column).
+    Returns (demo_text, source_tag).
     """
+    gr = row.get('golden_response')
+    if gr:
+        return "\n".join(gr), "golden_response"
     parts = []
-    for step in golden_answer:
+    for step in row['golden_answer']:
         parts.append(f"Action: {step['Action']}\nAction Input: {step['Action_Input']}")
-    return "\n".join(parts)
+    return "\n".join(parts), "synthesized_from_golden_answer"
 
 
 def parse_args():
@@ -56,10 +61,15 @@ def parse_args():
                         help="Dtype for hf engine. Defaults: cuda/mps=bfloat16, cpu=float32.")
     parser.add_argument("--max_samples", type=int, default=None,
                         help="Cap on number of eval samples (useful for smoke tests).")
+    parser.add_argument("--eval_data", type=str,
+                        default="data/tooluse_data/eval_data",
+                        help="Path to an arrow dataset with at least {prompt, golden_answer}; "
+                             "if it also has golden_response, --teacher_ceiling uses that "
+                             "(matching the SDFT trainer's teacher condition).")
     parser.add_argument("--teacher_ceiling", action="store_true",
                         help="Wrap each prompt with TEACHER_TEMPLATE using that row's own "
-                             "golden_answer as the matched demonstration. Measures the "
-                             "ICL-conditioned ceiling SDFT distills from (paper Sec 3.2).")
+                             "matched demonstration. Prefers golden_response when the dataset "
+                             "has it; falls back to synthesis from golden_answer otherwise.")
     return parser.parse_args()
 
 
@@ -117,21 +127,26 @@ def load_hf_model_and_tokenizer(model_path, device, dtype):
     return model, tokenizer
 
 
-def load_test_data(tokenizer, teacher_ceiling=False):
+def load_test_data(tokenizer, eval_data_path, teacher_ceiling=False):
     """Load and prepare tooluse test dataset.
 
     If teacher_ceiling=True, wrap each row's prompt with TEACHER_TEMPLATE using
-    that row's own golden_answer as the matched demonstration — the SDFT
-    teacher condition (NOT generic few-shot from train_data).
+    that row's own matched demonstration (golden_response when available,
+    else synthesized from golden_answer) — the SDFT teacher condition.
+    Returns (data, demo_source_tag) where demo_source_tag identifies which
+    demo format was used (None when teacher_ceiling=False).
     """
-    data_dir = 'data/tooluse_data/eval_data'
-    data = load_from_disk(data_dir).to_list()
+    data = load_from_disk(eval_data_path).to_list()
 
+    demo_source = None
     for example in data:
         if teacher_ceiling:
+            demo_text, src = _format_demo_from_row(example)
+            if demo_source is None:
+                demo_source = src
             content = TEACHER_TEMPLATE.substitute(
                 orig_content=example['prompt'],
-                output_text=_format_golden_as_demo(example['golden_answer']),
+                output_text=demo_text,
             )
         else:
             content = example['prompt']
@@ -141,7 +156,7 @@ def load_test_data(tokenizer, teacher_ceiling=False):
             add_generation_prompt=True
         )
 
-    return data
+    return data, demo_source
 
 
 def generate_responses_vllm(llm, tokenizer, prompts, max_new_tokens=1024, temperature=0.0):
@@ -242,9 +257,14 @@ def main():
         model, tokenizer = load_hf_model_and_tokenizer(args.model_path, device, dtype)
 
     # Load and (optionally) cap test data
-    test_data = load_test_data(tokenizer, teacher_ceiling=args.teacher_ceiling)
+    test_data, demo_source = load_test_data(
+        tokenizer,
+        eval_data_path=args.eval_data,
+        teacher_ceiling=args.teacher_ceiling,
+    )
+    print(f"Eval data: {args.eval_data} ({len(test_data)} rows)")
     if args.teacher_ceiling:
-        print("Teacher-ceiling mode: each row wrapped with its own golden_answer as demonstration.")
+        print(f"Teacher-ceiling mode: demo source = {demo_source}")
     if args.max_samples is not None:
         test_data = test_data[: args.max_samples]
         print(f"Capped eval set to first {len(test_data)} samples (--max_samples).")
@@ -293,6 +313,8 @@ def main():
             "dtype": str(dtype),
             "max_samples": args.max_samples,
             "teacher_ceiling": args.teacher_ceiling,
+            "eval_data": args.eval_data,
+            "demo_source": demo_source,
         }
     }
 

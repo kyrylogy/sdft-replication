@@ -1,0 +1,19 @@
+# Laptop / Apple-Silicon (MPS) subset of requirements.txt.
+# Excludes CUDA-only pins (vllm, flashinfer-python, deepspeed) and report/plot
+# extras not used on this branch (wandb, openai, rich, matplotlib, scipy).
+# Reproduce the venv with:
+#   uv venv --python 3.12 .venv
+#   uv pip install --python .venv/bin/python -r requirements-laptop.txt
+#
+# Verified runnable on M3 24GB:
+#   - eval_tooluse.py  (HF backend, MPS, --teacher_ceiling and --eval_data)
+#   - train_sdft_lora.py  (DistilTrainer + PEFT LoRA on student, single step OK)
+
+torch==2.9.0
+transformers==4.57.1
+datasets==4.3.0
+accelerate==1.11.0
+peft==0.17.1
+trl==0.24.0
+tqdm==4.67.1
+numpy==2.4.6

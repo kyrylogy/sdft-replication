@@ -13,3 +13,6 @@ bsub_outputs/
 
 # in-flight run artifacts (final eval_results.json/eval_responses.json committed explicitly)
 *.log
+
+# HF datasets .map() caches written next to arrow datasets
+data/**/cache-*.arrow

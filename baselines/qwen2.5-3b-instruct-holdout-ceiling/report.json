@@ -1,0 +1,873 @@
+{
+  "source_run": "baselines/qwen2.5-3b-instruct-holdout-ceiling",
+  "config": {
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "max_new_tokens": 1024,
+    "temperature": 0.0,
+    "engine": "hf",
+    "device": "mps",
+    "dtype": "torch.bfloat16",
+    "max_samples": null,
+    "teacher_ceiling": true,
+    "eval_data": "data/tooluse_data/train_subset_holdout",
+    "demo_source": "golden_response"
+  },
+  "headline": {
+    "n": 100,
+    "correct": 50,
+    "accuracy": 0.5
+  },
+  "failure_modes": {
+    "correct": 50,
+    "right_action_wrong_inputs": 14,
+    "partial_overlap": 25,
+    "action_wrong": 3,
+    "dup_count": 7,
+    "no_action": 1
+  },
+  "input_mismatch_breakdown": {
+    "value_mismatch": 10,
+    "missing_default_keys": 4
+  },
+  "step_count": {
+    "single_step": {
+      "n": 63,
+      "correct": 40,
+      "accuracy": 0.6349206349206349
+    },
+    "multi_step": {
+      "n": 37,
+      "correct": 10,
+      "accuracy": 0.2702702702702703
+    },
+    "step_distribution": {
+      "1": 63,
+      "2": 19,
+      "3": 10,
+      "4": 6,
+      "6": 1,
+      "8": 1
+    }
+  },
+  "per_api": [
+    {
+      "api": "Tronald Dump",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Readme typing SVG",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, Estonia",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Noctua",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "City, Nantes Open Data",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "openFDA",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Tenders in Hungary",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "EPO",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "CO2 Offset",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Excuser",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "CurrencyFreaks",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, Greece",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Logs.to",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Covalent",
+      "n": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Transport for Chicago, US",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Google Safe Browsing",
+      "n": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Namedays Calendar",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Zen Quotes",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Digi-Key",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Universities List",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Covid-19 Government Response",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Censys",
+      "n": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, Colombia",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, New South Wales",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "geoPlugin",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Tenders in Romania",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Wallhaven",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "OwlBot",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "University of Oslo",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "NewsX",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Imsea",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Geocodify.com",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "arXiv",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "IFTTT",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Metaphorsum",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Guerrilla Mail",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "PoetryDB",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "PostalPinCode",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "apilayer userstack",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "GoTiny",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Lordicon",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "LectServe",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Metro Lisboa",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Transport for Ottawa, Canada",
+      "n": 2,
+      "correct": 1,
+      "accuracy": 0.5
+    },
+    {
+      "api": "Luchtmeetnet",
+      "n": 2,
+      "correct": 1,
+      "accuracy": 0.5
+    },
+    {
+      "api": "Shrtcode",
+      "n": 2,
+      "correct": 1,
+      "accuracy": 0.5
+    },
+    {
+      "api": "Gaana",
+      "n": 2,
+      "correct": 1,
+      "accuracy": 0.5
+    },
+    {
+      "api": "Open Government, Canada",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "mod.io",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "GeoNames",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Open Skills",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Atlanta, US",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "CryptingUp",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Czech National Bank",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Cutt.ly",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ZipRecruiter",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Pastebin",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "YNAB",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "JCDecaux Bike",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Nutritionix",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Vancouver, Canada",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Privacy.com",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Monster Hunter World",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ZenRows",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Lichess",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "TransitLand",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "District of Columbia Open Data",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Fun Fact",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "AnimeChan",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "WakaTime",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Football-Data",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "National Bank of Poland",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "GeoDB Cities",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Guild Wars 2",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Wger",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "IUCN",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Metacert",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "JSONbin.io",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Spanish random names",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Trace Moe",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ELI",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "British National Bibliography",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Lowy Asia Power Index",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Open Government, Argentina",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "MercadoPago",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ipgeolocation",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "MyVaccination",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Line",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "WhatJobs",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "CleanURI",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Dogs",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "KKBOX",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    }
+  ],
+  "examples": {
+    "correct": [
+      {
+        "row_index": 0,
+        "api": "Tronald Dump",
+        "instruction": "I'm putting together a collage of Trump's most memorable quotes. Could you show me quotes and tweets having the tag \"Election\" from the Tronald Dump database?",
+        "golden_actions": [
+          "getQuotesByTag"
+        ],
+        "golden_inputs": {
+          "tag": "Election",
+          "page": 1,
+          "size": 10
+        },
+        "predicted_actions": [
+          "getQuotesByTag"
+        ],
+        "predicted_inputs": {
+          "tag": "Election",
+          "page": 1,
+          "size": 10
+        },
+        "response_first_400_chars": "Thought: To provide the user with the requested quotes and tweets, I first need to fetch the quotes and tweets tagged with \"Election\". After retrieving them, I'll present them to the user.\nAction: getQuotesByTag\nAction Input: {\"tag\": \"Election\", \"page\": 1, \"size\": 10}"
+      },
+      {
+        "row_index": 2,
+        "api": "Readme typing SVG",
+        "instruction": "I want to create a cool introduction for my personal website. Can you generate a typing SVG with the text \"Hi, I'm John Doe\" in a 20-point font size, green color, \"Arial\" font type, typing speed of 120 ms, start delay of 250 ms, deleting speed of 200 ms, and a pause duration of 1.5 seconds for me to embed on my site?",
+        "golden_actions": [
+          "generateTypingSvg"
+        ],
+        "golden_inputs": {
+          "text": "Hi, I'm John Doe",
+          "fontSize": 20,
+          "color": "green",
+          "fontType": "Arial",
+          "typingSpeed": 120,
+          "startDelay": 250,
+          "deletingSpeed": 200,
+          "pauseDuration": 1500
+        },
+        "predicted_actions": [
+          "generateTypingSvg"
+        ],
+        "predicted_inputs": {
+          "text": "Hi, I'm John Doe",
+          "fontSize": 20,
+          "color": "green",
+          "fontType": "Arial",
+          "typingSpeed": 120,
+          "startDelay": 250,
+          "deletingSpeed": 200,
+          "pauseDuration": 1500
+        },
+        "response_first_400_chars": "Thought: To generate the desired typing SVG, we need to provide the correct parameters based on the user's request. Let's proceed with calling the generateTypingSvg tool with the provided details.\nAction: generateTypingSvg\nAction Input: {\"text\": \"Hi, I'm John Doe\", \"fontSize\": 20, \"color\": \"green\", \"fontType\": \"Arial\", \"typingSpeed\": 120, \"startDelay\": 250, \"deletingSpeed\": 200, \"pauseDuration\": 1"
+      }
+    ],
+    "right_action_wrong_inputs": [
+      {
+        "row_index": 1,
+        "api": "Open Government, Canada",
+        "instruction": "Search for datasets related to education and start the results at index 20.",
+        "golden_actions": [
+          "searchDatasets"
+        ],
+        "golden_inputs": {
+          "query": "education",
+          "limit": 10,
+          "offset": 20
+        },
+        "predicted_actions": [
+          "searchDatasets"
+        ],
+        "predicted_inputs": {
+          "query": "education",
+          "limit": 100,
+          "offset": 0
+        },
+        "response_first_400_chars": "Thought: To find datasets related to education, we need to use the searchDatasets tool. However, the question asks us to start the results at index 20, but the current limit parameter only allows us to set the maximum number of results to return. We can achieve this by first finding all the datasets related to education and then filtering them to start from the 20th result. \n\nAction: searchDataset"
+      },
+      {
+        "row_index": 3,
+        "api": "mod.io",
+        "instruction": "I need to update some information about my mod. Can you help me with that? I want to change the name and add some tags.",
+        "golden_actions": [
+          "updateMod"
+        ],
+        "golden_inputs": {
+          "modId": "12345",
+          "name": "New Mod Name",
+          "tags": [
+            "new",
+            "tags"
+          ]
+        },
+        "predicted_actions": [
+          "updateMod"
+        ],
+        "predicted_inputs": {
+          "modId": "67890",
+          "name": "New Mod Name",
+          "tags": [
+            "new",
+            "tags"
+          ]
+        },
+        "response_first_400_chars": "Thought: To proceed with updating the mod's information, I first need to know the unique identifier (modId) of the mod. Since this information is not provided in the question, I will simulate a scenario where I assume the modId is '67890' for demonstration purposes. After obtaining the modId, I can then use the updateMod tool to make the necessary changes.\n\nAction: updateMod\nAction Input: {\"modId\""
+      }
+    ],
+    "partial_overlap": [
+      {
+        "row_index": 5,
+        "api": "GeoNames",
+        "instruction": "Hey, can you retrieve the time zone information for New York City using the GeoNames API?",
+        "golden_actions": [
+          "getTimeZone"
+        ],
+        "golden_inputs": {
+          "locationId": 5128581
+        },
+        "predicted_actions": [
+          "searchPlaces",
+          "getTimeZone"
+        ],
+        "predicted_inputs": {
+          "placeName": "New York",
+          "adminDivision": "NY",
+          "locationId": "obtained_location_id"
+        },
+        "response_first_400_chars": "Thought: To get the time zone information for New York City, we first need to identify its location ID. We can use the GeoNames searchPlaces tool to find the location ID for New York City. After obtaining the location ID, we can then use the getTimeZone tool to retrieve the time zone information.\nAction: searchPlaces\nAction Input: {\"placeName\": \"New York\", \"adminDivision\": \"NY\"}\n\nAfter receiving t"
+      },
+      {
+        "row_index": 9,
+        "api": "Transport for Atlanta, US",
+        "instruction": "There's a train that I frequently take in the morning, and I'd like to know its current location. Could you provide me with the real-time location data for the train on route #1111, including its latitude, longitude, and timestamp?",
+        "golden_actions": [
+          "getRealTimeVehicleLocation",
+          "listLines",
+          "searchStops",
+          "getRealTimeVehicleLocation",
+          "getRealTimeArrivalsAndDepartures",
+          "getRealTimeVehicleLocation"
+        ],
+        "golden_inputs": {
+          "routeId": 101,
+          "type": "train",
+          "keyword": "1111",
+          "stopId": 101
+        },
+        "predicted_actions": [
+          "searchStops"
+        ],
+        "predicted_inputs": {
+          "keyword": "1111"
+        },
+        "response_first_400_chars": "Thought: To find the real-time location of the train on route #1111, I first need to identify the correct stop associated with this route. However, the provided tools don't seem to directly provide the stopId for a specific route. Instead, I can try to find the stopId by searching for the stop name that corresponds to route #1111. Once I have the stopId, I can use it to fetch the real-time locatio"
+      }
+    ],
+    "action_wrong": [
+      {
+        "row_index": 6,
+        "api": "Open Skills",
+        "instruction": "I'm considering becoming a data analyst, but I need more information on the skills required for this job. Could you provide me with a list of skills necessary for a data analyst, based on the jobId?",
+        "golden_actions": [
+          "getSkillsByJob"
+        ],
+        "golden_inputs": {
+          "jobId": "data_analyst"
+        },
+        "predicted_actions": [
+          "getJobTitles"
+        ],
+        "predicted_inputs": {
+          "search": "data analyst"
+        },
+        "response_first_400_chars": "Thought: To find out the skills required for a data analyst, I need to first identify the job ID associated with the job title 'data analyst'. Once I have the job ID, I can use it as an input to the getSkillsByJob tool to retrieve the list of skills needed for this role.\nAction: getJobTitles\nAction Input: {\"search\": \"data analyst\"}"
+      },
+      {
+        "row_index": 13,
+        "api": "Czech National Bank",
+        "instruction": "I'm tracking my investments in different currencies, and I need to see how the exchange rates have changed over the past month. Can you provide me with the historical exchange rates for USD, EUR, and GBP between June 1st and June 30th?",
+        "golden_actions": [
+          "getHistoricalExchangeRates"
+        ],
+        "golden_inputs": {
+          "currencies": [
+            "USD",
+            "EUR",
+            "GBP"
+          ],
+          "startDate": "2020-06-01",
+          "endDate": "2020-06-30"
+        },
+        "predicted_actions": [
+          "listAvailableCurrencies"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: To answer this question, I need to first find out the available currencies that the Czech National Bank supports. After identifying the currencies, I can then proceed to fetch the historical exchange rates for USD, EUR, and GBP between June 1st and June 30th.\nAction: listAvailableCurrencies\nAction Input: {}"
+      }
+    ],
+    "dup_count": [
+      {
+        "row_index": 10,
+        "api": "CryptingUp",
+        "instruction": "I'm quite interested in how the value of Chainlink has developed over the past month. Please display the weekly price, volume, and other indicators for the last four weeks in GBP.",
+        "golden_actions": [
+          "getHistoricalData",
+          "getHistoricalData"
+        ],
+        "golden_inputs": {
+          "symbol": "LINK",
+          "interval": "1d",
+          "start": "2020-09-01",
+          "end": "2020-10-01",
+          "convert": "GBP"
+        },
+        "predicted_actions": [
+          "getHistoricalData"
+        ],
+        "predicted_inputs": {
+          "symbol": "LINK",
+          "interval": "1d",
+          "start": "2020-09-01",
+          "end": "2020-09-07",
+          "convert": "GBP"
+        },
+        "response_first_400_chars": "Thought: It seems I need to fetch daily historical data for Chainlink in GBP for the past four weeks. However, the provided tool only allows specifying a single date range at a time. To achieve the goal of showing the value development over the past month, I will need to request data for each week separately and then compile the results. Let me first gather the data for the first week (September 1"
+      },
+      {
+        "row_index": 20,
+        "api": "Cutt.ly",
+        "instruction": "Someone sent me a shortened link, but I'd like to know the original URL before clicking on it. Can you expand this link for me: \"https://cutt.ly/abc123\"?",
+        "golden_actions": [
+          "expandLink"
+        ],
+        "golden_inputs": {
+          "apiKey": "123456789",
+          "shortUrl": "https://cutt.ly/abc123"
+        },
+        "predicted_actions": [
+          "expandLink",
+          "expandLink"
+        ],
+        "predicted_inputs": {
+          "apiKey": "mockAPIKey",
+          "shortUrl": "https://cutt.ly/abc123"
+        },
+        "response_first_400_chars": "Thought: To expand the shortened link, I need to use the expandLink tool. However, I don't have the API key provided in the request. Normally, I would need the API key to proceed. Since we don't have that information, let's assume I can still perform the action and provide a mock response.\nAction: expandLink\nAction Input: {\"apiKey\": \"mockAPIKey\", \"shortUrl\": \"https://cutt.ly/abc123\"}\n\nNow answer w"
+      }
+    ],
+    "no_action": [
+      {
+        "row_index": 71,
+        "api": "Metacert",
+        "instruction": "Could you verify if this link leads to a legitimate website?",
+        "golden_actions": [
+          "verifyLink"
+        ],
+        "golden_inputs": {
+          "link": "www.example.com"
+        },
+        "predicted_actions": [],
+        "predicted_inputs": {},
+        "response_first_400_chars": "To verify if the provided link leads to a legitimate website, I will use the verifyLink tool. However, please provide me with the actual link that needs to be verified."
+      }
+    ]
+  }
+}

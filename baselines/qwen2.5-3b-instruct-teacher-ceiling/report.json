@@ -1,0 +1,356 @@
+{
+  "source_run": "baselines/qwen2.5-3b-instruct-teacher-ceiling",
+  "config": {
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "max_new_tokens": 1024,
+    "temperature": 0.0,
+    "engine": "hf",
+    "device": "mps",
+    "dtype": "torch.bfloat16",
+    "max_samples": null,
+    "teacher_ceiling": true
+  },
+  "headline": {
+    "n": 97,
+    "correct": 76,
+    "accuracy": 0.7835051546391752
+  },
+  "failure_modes": {
+    "correct": 76,
+    "dup_count": 4,
+    "right_action_wrong_inputs": 5,
+    "action_wrong": 2,
+    "partial_overlap": 10
+  },
+  "input_mismatch_breakdown": {
+    "missing_default_keys": 4,
+    "value_mismatch": 1
+  },
+  "step_count": {
+    "single_step": {
+      "n": 62,
+      "correct": 54,
+      "accuracy": 0.8709677419354839
+    },
+    "multi_step": {
+      "n": 35,
+      "correct": 22,
+      "accuracy": 0.6285714285714286
+    },
+    "step_distribution": {
+      "1": 62,
+      "2": 27,
+      "3": 6,
+      "4": 1,
+      "5": 1
+    }
+  },
+  "per_api": [
+    {
+      "api": "Lob.com",
+      "n": 8,
+      "correct": 8,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Axolotl",
+      "n": 13,
+      "correct": 12,
+      "accuracy": 0.9230769230769231
+    },
+    {
+      "api": "Am\u00e9thyste",
+      "n": 10,
+      "correct": 9,
+      "accuracy": 0.9
+    },
+    {
+      "api": "Abstract Public Holidays",
+      "n": 10,
+      "correct": 9,
+      "accuracy": 0.9
+    },
+    {
+      "api": "Apache Superset",
+      "n": 10,
+      "correct": 8,
+      "accuracy": 0.8
+    },
+    {
+      "api": "A B\u00edblia Digital",
+      "n": 13,
+      "correct": 10,
+      "accuracy": 0.7692307692307693
+    },
+    {
+      "api": "Auth0",
+      "n": 11,
+      "correct": 8,
+      "accuracy": 0.7272727272727273
+    },
+    {
+      "api": "AbuseIPDB",
+      "n": 9,
+      "correct": 6,
+      "accuracy": 0.6666666666666666
+    },
+    {
+      "api": "1Forge",
+      "n": 8,
+      "correct": 4,
+      "accuracy": 0.5
+    },
+    {
+      "api": "AniAPI",
+      "n": 5,
+      "correct": 2,
+      "accuracy": 0.4
+    }
+  ],
+  "examples": {
+    "correct": [
+      {
+        "row_index": 0,
+        "api": "Axolotl",
+        "instruction": "Hey, can you show me a random picture of an axolotl?",
+        "golden_actions": [
+          "getRandomAxolotlImage"
+        ],
+        "golden_inputs": {},
+        "predicted_actions": [
+          "getRandomAxolotlImage"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: The user wants to see a random picture of an axolotl. I need to use the `getRandomAxolotlImage` tool to fetch this image along with its source and description.\nAction: getRandomAxolotlImage\nAction Input: {}"
+      },
+      {
+        "row_index": 1,
+        "api": "Axolotl",
+        "instruction": "I'm looking for an axolotl that is wild in color and medium in size. Can you help me find some pictures?",
+        "golden_actions": [
+          "searchAxolotlImages"
+        ],
+        "golden_inputs": {
+          "color": "wild",
+          "gender": "",
+          "size": "medium",
+          "page": 1
+        },
+        "predicted_actions": [
+          "searchAxolotlImages"
+        ],
+        "predicted_inputs": {
+          "color": "wild",
+          "gender": "",
+          "size": "medium",
+          "page": 1
+        },
+        "response_first_400_chars": "Thought: To find an axolotl that is wild in color and medium in size, we need to use the searchAxolotlImages tool. We will provide the color as 'wild' and the size as 'medium'. Since no gender is specified, we can leave it empty. Let's proceed with this action.\nAction: searchAxolotlImages\nAction Input: {\"color\": \"wild\", \"gender\": \"\", \"size\": \"medium\", \"page\": 1}"
+      }
+    ],
+    "dup_count": [
+      {
+        "row_index": 7,
+        "api": "Axolotl",
+        "instruction": "I saw an axolotl with a unique color the other day, but I can't remember what it was called. Can you find images of axolotls with different colors, especially the more unusual ones? I'd like to figure out which one I saw.",
+        "golden_actions": [
+          "searchAxolotlImages",
+          "searchAxolotlImages",
+          "searchAxolotlImages"
+        ],
+        "golden_inputs": {
+          "color": "albino",
+          "gender": "",
+          "size": "",
+          "page": 1
+        },
+        "predicted_actions": [
+          "searchAxolotlImages",
+          "searchAxolotlImages",
+          "searchAxolotlImages",
+          "searchAxolotlImages"
+        ],
+        "predicted_inputs": {
+          "color": "other",
+          "gender": "",
+          "size": "",
+          "page": 1
+        },
+        "response_first_400_chars": "Thought: To find images of axolotls with different colors, especially the more unusual ones, I need to use the searchAxolotlImages tool. I will start by searching for axolotls with wild coloration, then leucistic, and finally albino coloration. This will help me gather a variety of images to compare against the one the user remembers seeing.\nAction: searchAxolotlImages\nAction Input: {\"color\": \"wil"
+      },
+      {
+        "row_index": 44,
+        "api": "1Forge",
+        "instruction": "I have 3000 CHF that I want to convert to USD. Can you tell me how much I would get in USD after the conversion? Additionally, I'd like to set a price alert if the CHF/USD exchange rate goes above 1.1.",
+        "golden_actions": [
+          "convertCurrency",
+          "setPriceAlert"
+        ],
+        "golden_inputs": {
+          "from": "CHF",
+          "to": "USD",
+          "amount": 3000,
+          "currency_pair": "CHF/USD",
+          "price": 1.1,
+          "direction": "above"
+        },
+        "predicted_actions": [
+          "convertCurrency",
+          "setPriceAlert",
+          "convertCurrency",
+          "setPriceAlert"
+        ],
+        "predicted_inputs": {
+          "from": "CHF",
+          "to": "USD",
+          "amount": 3000,
+          "currency_pair": "CHF/USD",
+          "price": 1.1,
+          "direction": "above"
+        },
+        "response_first_400_chars": "Thought: To answer the user's question, we need to perform two actions. First, we need to convert 3000 Swiss Francs (CHF) into US Dollars (USD). Then, we need to set up a price alert for the CHF/USD exchange rate to notify us if it goes above 1.10.\nAction: convertCurrency\nAction Input: {\"from\": \"CHF\", \"to\": \"USD\", \"amount\": 3000}\n\nThought: After getting the conversion result, we can proceed to set"
+      }
+    ],
+    "right_action_wrong_inputs": [
+      {
+        "row_index": 10,
+        "api": "AniAPI",
+        "instruction": "I'm in the mood for a new anime to watch but don't know where to start. Can you find me some mystery and action anime options that were released in 2020 and have a user rating of at least 4 stars?",
+        "golden_actions": [
+          "searchAnime"
+        ],
+        "golden_inputs": {
+          "filter": "genre = 'Mystery' AND genre = 'Action' AND release_year = 2020 AND user_rating >= 4"
+        },
+        "predicted_actions": [
+          "searchAnime"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: To find the appropriate anime, I need to use the searchAnime tool and provide it with the required parameters. These include specifying the genres as Mystery and Action, the release year as 2020, and the minimum user rating as 4 stars. Let's proceed with this request.\nAction: searchAnime\nAction Input: {\"query\": \"\", \"filters\": {\"genre\": [\"Mystery\", \"Action\"], \"release_year\": 2020, \"user_ra"
+      },
+      {
+        "row_index": 26,
+        "api": "Auth0",
+        "instruction": "I'd like to update my profile with a new profile picture URL, \"https://example.com/new_image.jpg\". I have the access token \"abcd1234\" and my user ID is \"g-user123.\" Can you help me make this change?",
+        "golden_actions": [
+          "updateUserProfile"
+        ],
+        "golden_inputs": {
+          "userId": "g-user123",
+          "accessToken": "abcd1234",
+          "profileData": {
+            "profilePictureUrl": "https://example.com/new_image.jpg"
+          }
+        },
+        "predicted_actions": [
+          "updateUserProfile"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: To update the user's profile picture, we need to use the updateUserProfile tool. We already have the necessary information: the user ID, the access token, and the new profile picture URL. Let's prepare the Action Input accordingly.\nAction: updateUserProfile\nAction Input: {\"userId\": \"g-user123\", \"accessToken\": \"abcd1234\", \"profileData\": {\"profilePictureUrl\": \"https://example.com/new_image."
+      }
+    ],
+    "action_wrong": [
+      {
+        "row_index": 12,
+        "api": "AbuseIPDB",
+        "instruction": "I've been dealing with a malicious IP address trying to access my system. Can you help me report this address, 192.168.1.100, and let's categorize it as \"brute-force\" and \"DDoS\"? Also, include a comment saying \"Multiple failed login attempts and DDoS attacks.\"",
+        "golden_actions": [
+          "reportAbusiveIP"
+        ],
+        "golden_inputs": {
+          "ip": "192.168.1.100",
+          "categories": [
+            "brute-force",
+            "DDoS"
+          ],
+          "comment": "Multiple failed login attempts and DDoS attacks."
+        },
+        "predicted_actions": [
+          "checkIPReputation"
+        ],
+        "predicted_inputs": {
+          "ip": "192.168.1.100",
+          "maxAgeInDays": 30
+        },
+        "response_first_400_chars": "Thought: To proceed with reporting the malicious IP address, we need to use the `reportAbusiveIP` tool. However, before doing that, I will first check the current reputation of the IP address to ensure it hasn't already been reported under similar categories. This will help us confirm if we need to report it again or not.\nAction: checkIPReputation\nAction Input: {\"ip\": \"192.168.1.100\", \"maxAgeInDay"
+      },
+      {
+        "row_index": 48,
+        "api": "A B\u00edblia Digital",
+        "instruction": "I want to read the content of chapter 3 in the book of Job from the New International Version. Please retrieve this chapter for me, including the chapter number, book name, version name, and all the verses with their respective verse numbers and text.",
+        "golden_actions": [
+          "getAllVersesFromChapter"
+        ],
+        "golden_inputs": {
+          "book": "Job",
+          "chapter": 3,
+          "version": "New International Version"
+        },
+        "predicted_actions": [
+          "getBookMetadata"
+        ],
+        "predicted_inputs": {
+          "book": "Job",
+          "version": "New International Version",
+          "language": "en"
+        },
+        "response_first_400_chars": "Thought: To fulfill the user's request, I need to first get the chapter metadata to confirm that it contains chapter 3, then retrieve all the verses in that chapter. Let's start with getting the chapter metadata.\nAction: getBookMetadata\nAction Input: {\"book\": \"Job\", \"version\": \"New International Version\", \"language\": \"en\"}"
+      }
+    ],
+    "partial_overlap": [
+      {
+        "row_index": 17,
+        "api": "AbuseIPDB",
+        "instruction": "Hey, I've come across an IP address, 168.0.99.1, that I doubt it to be abusive in some aspects. Could you help me check its reputation score? If its reputation score is normal, please report it as \"malware\" and \"hacking\"",
+        "golden_actions": [
+          "checkIPReputation",
+          "reportAbusiveIP"
+        ],
+        "golden_inputs": {
+          "ip": "168.0.99.1",
+          "categories": [
+            "malware",
+            "hacking"
+          ],
+          "comment": "Suspected malicious activities."
+        },
+        "predicted_actions": [
+          "checkIPReputation"
+        ],
+        "predicted_inputs": {
+          "ip": "168.0.99.1",
+          "categories": [
+            "malware",
+            "hacking"
+          ],
+          "comment": "Suspected malicious activities."
+        },
+        "response_first_400_chars": "Thought: First, I need to check the reputation score of the provided IP address to understand if it has any known issues. After that, I will proceed to report it as \"malware\" and \"hacking\" if necessary.\nAction: checkIPReputation\nAction Input: {\"ip\": \"168.0.99.1\"}\n\nThought: Now that I have the reputation score, I can determine if reporting the IP address as \"malware\" and \"hacking\" is necessary. If "
+      },
+      {
+        "row_index": 18,
+        "api": "Am\u00e9thyste",
+        "instruction": "I just joined a new Discord server and I want my avatar to stand out. Can you create a unique avatar for me with a \"grunge\" style in \"png\" format? My Discord user ID is \"123456789\"",
+        "golden_actions": [
+          "generateAvatar"
+        ],
+        "golden_inputs": {
+          "userId": "123456789",
+          "style": "grunge",
+          "format": "png"
+        },
+        "predicted_actions": [
+          "searchUser",
+          "generateAvatar"
+        ],
+        "predicted_inputs": {
+          "query": "123456789",
+          "userId": "123456789",
+          "style": "grunge",
+          "format": "png"
+        },
+        "response_first_400_chars": "Thought: To create a unique avatar for the user, I need to use the generateAvatar tool. However, I first need to confirm the user ID provided is correct and then proceed with creating the avatar according to the specified style and format.\nAction: searchUser\nAction Input: {\"query\": \"123456789\"}\n\nThought: After confirming the user ID, I will use the generateAvatar tool to create a grunge-style avat"
+      }
+    ]
+  }
+}

@@ -1,0 +1,358 @@
+{
+  "source_run": "baselines/qwen2.5-3b-instruct",
+  "config": {
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "max_new_tokens": 1024,
+    "temperature": 0.0,
+    "engine": "hf",
+    "device": "mps",
+    "dtype": "torch.bfloat16",
+    "max_samples": null
+  },
+  "headline": {
+    "n": 97,
+    "correct": 27,
+    "accuracy": 0.27835051546391754
+  },
+  "failure_modes": {
+    "correct": 27,
+    "right_action_wrong_inputs": 18,
+    "dup_count": 8,
+    "partial_overlap": 38,
+    "action_wrong": 6
+  },
+  "input_mismatch_breakdown": {
+    "missing_default_keys": 4,
+    "value_mismatch": 9,
+    "mixed": 3,
+    "extra_keys": 2
+  },
+  "step_count": {
+    "single_step": {
+      "n": 62,
+      "correct": 15,
+      "accuracy": 0.24193548387096775
+    },
+    "multi_step": {
+      "n": 35,
+      "correct": 12,
+      "accuracy": 0.34285714285714286
+    },
+    "step_distribution": {
+      "1": 62,
+      "2": 27,
+      "3": 6,
+      "4": 1,
+      "5": 1
+    }
+  },
+  "per_api": [
+    {
+      "api": "1Forge",
+      "n": 8,
+      "correct": 4,
+      "accuracy": 0.5
+    },
+    {
+      "api": "Abstract Public Holidays",
+      "n": 10,
+      "correct": 4,
+      "accuracy": 0.4
+    },
+    {
+      "api": "Lob.com",
+      "n": 8,
+      "correct": 3,
+      "accuracy": 0.375
+    },
+    {
+      "api": "Auth0",
+      "n": 11,
+      "correct": 4,
+      "accuracy": 0.36363636363636365
+    },
+    {
+      "api": "AbuseIPDB",
+      "n": 9,
+      "correct": 3,
+      "accuracy": 0.3333333333333333
+    },
+    {
+      "api": "Axolotl",
+      "n": 13,
+      "correct": 3,
+      "accuracy": 0.23076923076923078
+    },
+    {
+      "api": "A B\u00edblia Digital",
+      "n": 13,
+      "correct": 3,
+      "accuracy": 0.23076923076923078
+    },
+    {
+      "api": "Am\u00e9thyste",
+      "n": 10,
+      "correct": 2,
+      "accuracy": 0.2
+    },
+    {
+      "api": "Apache Superset",
+      "n": 10,
+      "correct": 1,
+      "accuracy": 0.1
+    },
+    {
+      "api": "AniAPI",
+      "n": 5,
+      "correct": 0,
+      "accuracy": 0.0
+    }
+  ],
+  "examples": {
+    "correct": [
+      {
+        "row_index": 0,
+        "api": "Axolotl",
+        "instruction": "Hey, can you show me a random picture of an axolotl?",
+        "golden_actions": [
+          "getRandomAxolotlImage"
+        ],
+        "golden_inputs": {},
+        "predicted_actions": [
+          "getRandomAxolotlImage"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: The user wants to see a random picture of an axolotl. I will use the getRandomAxolotlImage tool to fetch this image.\nAction: getRandomAxolotlImage\nAction Input: {}"
+      },
+      {
+        "row_index": 2,
+        "api": "Axolotl",
+        "instruction": "Can you tell me three interesting facts about axolotls' habitats?",
+        "golden_actions": [
+          "getAxolotlFacts"
+        ],
+        "golden_inputs": {
+          "category": "habitat",
+          "limit": 3
+        },
+        "predicted_actions": [
+          "getAxolotlFacts"
+        ],
+        "predicted_inputs": {
+          "category": "habitat",
+          "limit": 3
+        },
+        "response_first_400_chars": "Thought: To find out interesting facts about axolotls' habitats, I need to use the getAxolotlFacts tool. I will specify the category as 'habitat' and limit the number of facts to 3.\nAction: getAxolotlFacts\nAction Input: {\"category\": \"habitat\", \"limit\": 3}"
+      }
+    ],
+    "right_action_wrong_inputs": [
+      {
+        "row_index": 1,
+        "api": "Axolotl",
+        "instruction": "I'm looking for an axolotl that is wild in color and medium in size. Can you help me find some pictures?",
+        "golden_actions": [
+          "searchAxolotlImages"
+        ],
+        "golden_inputs": {
+          "color": "wild",
+          "gender": "",
+          "size": "medium",
+          "page": 1
+        },
+        "predicted_actions": [
+          "searchAxolotlImages"
+        ],
+        "predicted_inputs": {
+          "color": "wild",
+          "size": "medium",
+          "page": 1
+        },
+        "response_first_400_chars": "Thought: The user wants to find an axolotl picture that is wild in color and medium in size. I need to use the searchAxolotlImages tool to find these specific axolotl images.\nAction: searchAxolotlImages\nAction Input: {\"color\": \"wild\", \"size\": \"medium\", \"page\": 1}"
+      },
+      {
+        "row_index": 3,
+        "api": "Axolotl",
+        "instruction": "I need to find out about axolotls' physical characteristics. Can you provide some facts?",
+        "golden_actions": [
+          "getAxolotlFacts"
+        ],
+        "golden_inputs": {
+          "category": "physical characteristics",
+          "limit": 3
+        },
+        "predicted_actions": [
+          "getAxolotlFacts"
+        ],
+        "predicted_inputs": {
+          "category": "physical characteristics",
+          "limit": 5
+        },
+        "response_first_400_chars": "Thought: To find out about axolotls' physical characteristics, I need to use the getAxolotlFacts tool and specify the category as 'physical characteristics'. Let's proceed with that.\nAction: getAxolotlFacts\nAction Input: {\"category\": \"physical characteristics\", \"limit\": 5}"
+      }
+    ],
+    "dup_count": [
+      {
+        "row_index": 6,
+        "api": "Axolotl",
+        "instruction": "My nephew is crazy about axolotls and wants to see what they look like at different stages of growth. Could you find images of small, medium, and large-sized axolotls for him to look at?",
+        "golden_actions": [
+          "searchAxolotlImages",
+          "searchAxolotlImages",
+          "searchAxolotlImages"
+        ],
+        "golden_inputs": {
+          "color": "wild",
+          "gender": "",
+          "size": "large",
+          "page": 1
+        },
+        "predicted_actions": [
+          "searchAxolotlImages"
+        ],
+        "predicted_inputs": {
+          "color": "wild",
+          "gender": "wild",
+          "size": [
+            "small",
+            "medium",
+            "large"
+          ],
+          "page": 1
+        },
+        "response_first_400_chars": "Thought: To satisfy the user's request, I need to search for images of axolotls at different stages of growth, specifically small, medium, and large sizes. I will use the searchAxolotlImages tool for this purpose.\nAction: searchAxolotlImages\nAction Input: {\"color\": \"wild\", \"gender\": \"wild\", \"size\": [\"small\", \"medium\", \"large\"], \"page\": 1}"
+      },
+      {
+        "row_index": 7,
+        "api": "Axolotl",
+        "instruction": "I saw an axolotl with a unique color the other day, but I can't remember what it was called. Can you find images of axolotls with different colors, especially the more unusual ones? I'd like to figure out which one I saw.",
+        "golden_actions": [
+          "searchAxolotlImages",
+          "searchAxolotlImages",
+          "searchAxolotlImages"
+        ],
+        "golden_inputs": {
+          "color": "albino",
+          "gender": "",
+          "size": "",
+          "page": 1
+        },
+        "predicted_actions": [
+          "searchAxolotlImages"
+        ],
+        "predicted_inputs": {
+          "color": "wild",
+          "gender": "",
+          "size": "",
+          "page": 1
+        },
+        "response_first_400_chars": "Thought: The user is looking for images of axolotls with various colors, particularly the more unusual ones. I will use the searchAxolotlImages tool to fetch these images.\nAction: searchAxolotlImages\nAction Input: {\"color\": \"wild\", \"gender\": \"\", \"size\": \"\", \"page\": 1}"
+      }
+    ],
+    "partial_overlap": [
+      {
+        "row_index": 8,
+        "api": "Axolotl",
+        "instruction": "I want to share a unique axolotl fact with my coworkers during our virtual lunch break tomorrow. Can you find me a captivating fact about axolotls that will surprise and entertain them? Please include the source URL as well.",
+        "golden_actions": [
+          "getAxolotlFacts"
+        ],
+        "golden_inputs": {
+          "category": "habits",
+          "limit": 1
+        },
+        "predicted_actions": [
+          "getAxolotlFacts",
+          "getAxolotlFacts",
+          "None",
+          "None"
+        ],
+        "predicted_inputs": {
+          "category": "physical characteristics",
+          "limit": 1
+        },
+        "response_first_400_chars": "Thought: The user wants an entertaining and surprising fact about axolotls along with its source. I can use the getAxolotlFacts tool to fetch facts and then extract the relevant details.\nAction: getAxolotlFacts\nAction Input: {\"category\": \"physical characteristics\", \"limit\": 1}\nThought: After fetching the facts, I need to parse the response to extract the fact and its source URL.\nAction: getAxolotl"
+      },
+      {
+        "row_index": 10,
+        "api": "AniAPI",
+        "instruction": "I'm in the mood for a new anime to watch but don't know where to start. Can you find me some mystery and action anime options that were released in 2020 and have a user rating of at least 4 stars?",
+        "golden_actions": [
+          "searchAnime"
+        ],
+        "golden_inputs": {
+          "filter": "genre = 'Mystery' AND genre = 'Action' AND release_year = 2020 AND user_rating >= 4"
+        },
+        "predicted_actions": [
+          "searchAnime",
+          "getRecommendations"
+        ],
+        "predicted_inputs": {
+          "animeId": "1"
+        },
+        "response_first_400_chars": "Thought: The user wants recommendations for mystery and action anime released in 2020 with a minimum user rating of 4 stars. To provide this, I need to first search for anime that match these criteria. Afterward, I can fetch more detailed information about them, including their cast and crew, cover images, and brief descriptions.\nAction: searchAnime\nAction Input: {\"query\": \"mystery action\", \"filte"
+      }
+    ],
+    "action_wrong": [
+      {
+        "row_index": 12,
+        "api": "AbuseIPDB",
+        "instruction": "I've been dealing with a malicious IP address trying to access my system. Can you help me report this address, 192.168.1.100, and let's categorize it as \"brute-force\" and \"DDoS\"? Also, include a comment saying \"Multiple failed login attempts and DDoS attacks.\"",
+        "golden_actions": [
+          "reportAbusiveIP"
+        ],
+        "golden_inputs": {
+          "ip": "192.168.1.100",
+          "categories": [
+            "brute-force",
+            "DDoS"
+          ],
+          "comment": "Multiple failed login attempts and DDoS attacks."
+        },
+        "predicted_actions": [
+          "reportAbuseIP",
+          "checkIPReputation",
+          "None",
+          "None"
+        ],
+        "predicted_inputs": {
+          "ip": "192.168.1.100",
+          "categories": [
+            "brute-force",
+            "DDoS"
+          ],
+          "comment": "Multiple failed login attempts and DDoS attacks.",
+          "maxAgeInDays": 30
+        },
+        "response_first_400_chars": "Thought: To report the malicious IP address, we need to use the AbuseIPDB tool. We will provide the IP address, specify the abuse categories as \"brute-force\" and \"DDoS\", and add a comment describing the issue.\nAction: reportAbuseIP\nAction Input: {\"ip\": \"192.168.1.100\", \"categories\": [\"brute-force\", \"DDoS\"], \"comment\": \"Multiple failed login attempts and DDoS attacks.\"}\n\nResponse: Since the respons"
+      },
+      {
+        "row_index": 15,
+        "api": "AbuseIPDB",
+        "instruction": " My network is being flooded with spam emails from the IP address 200.0.0.25. I want to report it for spam and phishing. In the comment section, add \"Sending multiple spam emails and phishing attempts.\"\n",
+        "golden_actions": [
+          "reportAbusiveIP"
+        ],
+        "golden_inputs": {
+          "ip": "200.0.0.25",
+          "categories": [
+            "Spam",
+            "Phishing"
+          ],
+          "comment": "Sending multiple spam emails and phishing attempts."
+        },
+        "predicted_actions": [
+          "reportAbuseIP"
+        ],
+        "predicted_inputs": {
+          "ip": "200.0.0.25",
+          "categories": [
+            "spam",
+            "phishing"
+          ],
+          "comment": "Sending multiple spam emails and phishing attempts."
+        },
+        "response_first_400_chars": "Thought: To report the IP address for spam and phishing activities, we need to use the AbuseIPDB tool. We will provide the IP address and specify the abuse categories as 'spam' and 'phishing'. Additionally, we will include the provided comment in the report.\nAction: reportAbuseIP\nAction Input: {\"ip\": \"200.0.0.25\", \"categories\": [\"spam\", \"phishing\"], \"comment\": \"Sending multiple spam emails and phi"
+      }
+    ]
+  }
+}

@@ -1,0 +1,858 @@
+{
+  "source_run": "baselines/qwen2.5-3b-instruct-holdout-base",
+  "config": {
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "max_new_tokens": 1024,
+    "temperature": 0.0,
+    "engine": "hf",
+    "device": "mps",
+    "dtype": "torch.bfloat16",
+    "max_samples": null,
+    "teacher_ceiling": false,
+    "eval_data": "data/tooluse_data/train_subset_holdout",
+    "demo_source": null
+  },
+  "headline": {
+    "n": 100,
+    "correct": 18,
+    "accuracy": 0.18
+  },
+  "failure_modes": {
+    "right_action_wrong_inputs": 17,
+    "correct": 18,
+    "dup_count": 9,
+    "partial_overlap": 46,
+    "action_wrong": 10
+  },
+  "input_mismatch_breakdown": {
+    "missing_default_keys": 3,
+    "value_mismatch": 9,
+    "mixed": 4,
+    "extra_keys": 1
+  },
+  "step_count": {
+    "single_step": {
+      "n": 63,
+      "correct": 18,
+      "accuracy": 0.2857142857142857
+    },
+    "multi_step": {
+      "n": 37,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "step_distribution": {
+      "1": 63,
+      "2": 19,
+      "3": 10,
+      "4": 6,
+      "6": 1,
+      "8": 1
+    }
+  },
+  "per_api": [
+    {
+      "api": "Open Government, Canada",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, Estonia",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Excuser",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "CurrencyFreaks",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Privacy.com",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Google Safe Browsing",
+      "n": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Digi-Key",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Lichess",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, Colombia",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Open Government, New South Wales",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Tenders in Romania",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "OwlBot",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Imsea",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Geocodify.com",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Lowy Asia Power Index",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "apilayer userstack",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Lordicon",
+      "n": 1,
+      "correct": 1,
+      "accuracy": 1.0
+    },
+    {
+      "api": "Tronald Dump",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Readme typing SVG",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "mod.io",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "GeoNames",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Open Skills",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Noctua",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "City, Nantes Open Data",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Atlanta, US",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "CryptingUp",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Ottawa, Canada",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Czech National Bank",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "openFDA",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Luchtmeetnet",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Tenders in Hungary",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "EPO",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "CO2 Offset",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Cutt.ly",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ZipRecruiter",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Pastebin",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Open Government, Greece",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "YNAB",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Logs.to",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "JCDecaux Bike",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Nutritionix",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Covalent",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Vancouver, Canada",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Transport for Chicago, US",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Monster Hunter World",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Namedays Calendar",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Zen Quotes",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ZenRows",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Universities List",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Covid-19 Government Response",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "TransitLand",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "District of Columbia Open Data",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Censys",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Fun Fact",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Shrtcode",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "AnimeChan",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "geoPlugin",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "WakaTime",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Wallhaven",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "University of Oslo",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Football-Data",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "NewsX",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "National Bank of Poland",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "GeoDB Cities",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Guild Wars 2",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Wger",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "arXiv",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "IUCN",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Metacert",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "IFTTT",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "JSONbin.io",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Metaphorsum",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Guerrilla Mail",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "PoetryDB",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "PostalPinCode",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Spanish random names",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Trace Moe",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ELI",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "British National Bibliography",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Gaana",
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Open Government, Argentina",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "MercadoPago",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "ipgeolocation",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "GoTiny",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "MyVaccination",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Line",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "LectServe",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "WhatJobs",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "CleanURI",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Metro Lisboa",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "Dogs",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    {
+      "api": "KKBOX",
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    }
+  ],
+  "examples": {
+    "right_action_wrong_inputs": [
+      {
+        "row_index": 0,
+        "api": "Tronald Dump",
+        "instruction": "I'm putting together a collage of Trump's most memorable quotes. Could you show me quotes and tweets having the tag \"Election\" from the Tronald Dump database?",
+        "golden_actions": [
+          "getQuotesByTag"
+        ],
+        "golden_inputs": {
+          "tag": "Election",
+          "page": 1,
+          "size": 10
+        },
+        "predicted_actions": [
+          "getQuotesByTag"
+        ],
+        "predicted_inputs": {
+          "tag": "Election"
+        },
+        "response_first_400_chars": "Thought: To create the collage, we need to fetch quotes and tweets tagged with \"Election\" from the Tronald Dump database. Let's start by fetching those.\nAction: getQuotesByTag\nAction Input: {\"tag\": \"Election\"}"
+      },
+      {
+        "row_index": 13,
+        "api": "Czech National Bank",
+        "instruction": "I'm tracking my investments in different currencies, and I need to see how the exchange rates have changed over the past month. Can you provide me with the historical exchange rates for USD, EUR, and GBP between June 1st and June 30th?",
+        "golden_actions": [
+          "getHistoricalExchangeRates"
+        ],
+        "golden_inputs": {
+          "currencies": [
+            "USD",
+            "EUR",
+            "GBP"
+          ],
+          "startDate": "2020-06-01",
+          "endDate": "2020-06-30"
+        },
+        "predicted_actions": [
+          "getHistoricalExchangeRates"
+        ],
+        "predicted_inputs": {
+          "currencies": [
+            "USD",
+            "EUR",
+            "GBP"
+          ],
+          "startDate": "2023-06-01",
+          "endDate": "2023-06-30"
+        },
+        "response_first_400_chars": "Thought: The user wants to know the historical exchange rates for USD, EUR, and GBP between June 1st and June 30th. To get this information, I need to use the Czech National Bank's service to fetch historical exchange rates.\nAction: getHistoricalExchangeRates\nAction Input: {\"currencies\": [\"USD\", \"EUR\", \"GBP\"], \"startDate\": \"2023-06-01\", \"endDate\": \"2023-06-30\"}"
+      }
+    ],
+    "correct": [
+      {
+        "row_index": 1,
+        "api": "Open Government, Canada",
+        "instruction": "Search for datasets related to education and start the results at index 20.",
+        "golden_actions": [
+          "searchDatasets"
+        ],
+        "golden_inputs": {
+          "query": "education",
+          "limit": 10,
+          "offset": 20
+        },
+        "predicted_actions": [
+          "searchDatasets"
+        ],
+        "predicted_inputs": {
+          "query": "education",
+          "limit": 10,
+          "offset": 20
+        },
+        "response_first_400_chars": "Thought: To find datasets related to education, I need to use the searchDatasets tool with the appropriate query and offset parameters. Since we want to start the results at index 20, the offset should be set to 20 (as the first result is at index 0).\nAction: searchDatasets\nAction Input: {\"query\": \"education\", \"limit\": 10, \"offset\": 20}"
+      },
+      {
+        "row_index": 4,
+        "api": "Open Government, Estonia",
+        "instruction": "I need detailed information on the dataset with the datasetId \"EstPop123\". Can you fetch that for me?",
+        "golden_actions": [
+          "getDatasetDetails"
+        ],
+        "golden_inputs": {
+          "datasetId": "EstPop123"
+        },
+        "predicted_actions": [
+          "getDatasetDetails"
+        ],
+        "predicted_inputs": {
+          "datasetId": "EstPop123"
+        },
+        "response_first_400_chars": "Thought: To fetch the detailed information on the dataset with the given datasetId, I need to use the 'getDatasetDetails' tool. Let's proceed with that.\nAction: getDatasetDetails\nAction Input: {\"datasetId\": \"EstPop123\"}"
+      }
+    ],
+    "dup_count": [
+      {
+        "row_index": 2,
+        "api": "Readme typing SVG",
+        "instruction": "I want to create a cool introduction for my personal website. Can you generate a typing SVG with the text \"Hi, I'm John Doe\" in a 20-point font size, green color, \"Arial\" font type, typing speed of 120 ms, start delay of 250 ms, deleting speed of 200 ms, and a pause duration of 1.5 seconds for me to embed on my site?",
+        "golden_actions": [
+          "generateTypingSvg"
+        ],
+        "golden_inputs": {
+          "text": "Hi, I'm John Doe",
+          "fontSize": 20,
+          "color": "green",
+          "fontType": "Arial",
+          "typingSpeed": 120,
+          "startDelay": 250,
+          "deletingSpeed": 200,
+          "pauseDuration": 1500
+        },
+        "predicted_actions": [
+          "generateTypingSvg",
+          "generateTypingSvg"
+        ],
+        "predicted_inputs": {
+          "text": "Hi, I'm John Doe",
+          "fontSize": 20,
+          "color": "green",
+          "fontType": "Arial",
+          "typingSpeed": 120,
+          "startDelay": 250,
+          "deletingSpeed": 200,
+          "pauseDuration": 1500
+        },
+        "response_first_400_chars": "Thought: The user wants a specific typing SVG with certain parameters. I need to use the 'generateTypingSvg' tool to create this SVG based on the provided details.\nAction: generateTypingSvg\nAction Input: {\"text\": \"Hi, I'm John Doe\", \"fontSize\": 20, \"color\": \"green\", \"fontType\": \"Arial\", \"typingSpeed\": 120, \"startDelay\": 250, \"deletingSpeed\": 200, \"pauseDuration\": 1500}\nThought: After generating th"
+      },
+      {
+        "row_index": 10,
+        "api": "CryptingUp",
+        "instruction": "I'm quite interested in how the value of Chainlink has developed over the past month. Please display the weekly price, volume, and other indicators for the last four weeks in GBP.",
+        "golden_actions": [
+          "getHistoricalData",
+          "getHistoricalData"
+        ],
+        "golden_inputs": {
+          "symbol": "LINK",
+          "interval": "1d",
+          "start": "2020-09-01",
+          "end": "2020-10-01",
+          "convert": "GBP"
+        },
+        "predicted_actions": [
+          "getHistoricalData"
+        ],
+        "predicted_inputs": {
+          "symbol": "LINK",
+          "interval": "1w",
+          "start": "2023-03-01",
+          "end": "2023-04-01",
+          "convert": "GBP"
+        },
+        "response_first_400_chars": "Thought: The user wants to know the development of Chainlink's value over the past month, specifically focusing on the last four weeks. To provide this information, we need to retrieve the historical data for Chainlink with a weekly interval and convert it into GBP. Let's use the 'getHistoricalData' tool to fetch the data.\nAction: getHistoricalData\nAction Input: {\"symbol\": \"LINK\", \"interval\": \"1w\""
+      }
+    ],
+    "partial_overlap": [
+      {
+        "row_index": 3,
+        "api": "mod.io",
+        "instruction": "I need to update some information about my mod. Can you help me with that? I want to change the name and add some tags.",
+        "golden_actions": [
+          "updateMod"
+        ],
+        "golden_inputs": {
+          "modId": "12345",
+          "name": "New Mod Name",
+          "tags": [
+            "new",
+            "tags"
+          ]
+        },
+        "predicted_actions": [
+          "updateMod",
+          "getMod"
+        ],
+        "predicted_inputs": {
+          "modId": 12345,
+          "name": "Updated Mod Name",
+          "summary": "This is an updated mod with new features.",
+          "description": "Detailed description of the updated mod.",
+          "tags": [
+            "new tag",
+            "updated tag"
+          ]
+        },
+        "response_first_400_chars": "Thought: The user wants to update their mod's information, including changing the name and adding tags. I will use the 'updateMod' tool to accomplish this.\nAction: updateMod\nAction Input: {\"modId\": 12345, \"name\": \"Updated Mod Name\", \"summary\": \"This is an updated mod with new features.\", \"description\": \"Detailed description of the updated mod.\", \"tags\": [\"new tag\", \"updated tag\"]}\nThought: After u"
+      },
+      {
+        "row_index": 5,
+        "api": "GeoNames",
+        "instruction": "Hey, can you retrieve the time zone information for New York City using the GeoNames API?",
+        "golden_actions": [
+          "getTimeZone"
+        ],
+        "golden_inputs": {
+          "locationId": 5128581
+        },
+        "predicted_actions": [
+          "getLocationInfo",
+          "getTimeZone"
+        ],
+        "predicted_inputs": {
+          "locationName": "New York City",
+          "locationId": "<location_id_from_previous_step>"
+        },
+        "response_first_400_chars": "Thought: To find the time zone information for New York City, I need to first get the location ID for New York City. After that, I can use the location ID to fetch the time zone details.\nAction: getLocationInfo\nAction Input: {\"locationName\": \"New York City\"}\nThought: Now that I have the location ID for New York City, I will use it to fetch the time zone information.\nAction: getTimeZone\nAction Inpu"
+      }
+    ],
+    "action_wrong": [
+      {
+        "row_index": 8,
+        "api": "City, Nantes Open Data",
+        "instruction": "I'm curious about the traffic flow in a specific area of Nantes. Can you help me obtain the current traffic flow information for that location?",
+        "golden_actions": [
+          "getLocationTrafficFlow"
+        ],
+        "golden_inputs": {
+          "locationId": "123"
+        },
+        "predicted_actions": [
+          "None"
+        ],
+        "predicted_inputs": {},
+        "response_first_400_chars": "Thought: To provide the user with the current traffic flow information, I need to use the 'getLocationTrafficFlow' tool. However, I first need to find out the location ID of the specific area they're interested in. Since this information isn't provided directly in the question, I'll ask the user to specify the location ID or provide more details so I can proceed.\nAction: None\nAction Input: null\nRe"
+      },
+      {
+        "row_index": 69,
+        "api": "arXiv",
+        "instruction": "Can you search for recent research papers on quantum computing?",
+        "golden_actions": [
+          "search"
+        ],
+        "golden_inputs": {
+          "search_query": "quantum computing",
+          "start": 0,
+          "max_results": 10
+        },
+        "predicted_actions": [
+          "arXiv"
+        ],
+        "predicted_inputs": {
+          "search_query": "quantum computing",
+          "start": 0,
+          "max_results": 5
+        },
+        "response_first_400_chars": "Thought: To find recent research papers on quantum computing, I need to use the arXiv search tool with appropriate parameters.\nAction: arXiv\nAction Input: {\"search_query\": \"quantum computing\", \"start\": 0, \"max_results\": 5}"
+      }
+    ]
+  }
+}

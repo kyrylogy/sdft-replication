@@ -1,0 +1,42 @@
+{
+  "base_run": "baselines/qwen2.5-3b-instruct-holdout-base",
+  "ceiling_run": "baselines/qwen2.5-3b-instruct-holdout-ceiling",
+  "n": 100,
+  "base_accuracy": 0.18,
+  "ceiling_accuracy": 0.5,
+  "absolute_gain": 0.32,
+  "movement": {
+    "wrong_to_right_gained": 36,
+    "right_to_right_kept": 14,
+    "right_to_wrong_lost": 4,
+    "wrong_to_wrong_still": 46
+  },
+  "flips_wrong_to_right_indices": [
+    0,
+    2,
+    7,
+    8,
+    11,
+    14,
+    15,
+    17,
+    18,
+    19,
+    25,
+    27,
+    30,
+    31,
+    34,
+    38,
+    39,
+    43,
+    44,
+    47
+  ],
+  "flips_right_to_wrong_indices": [
+    1,
+    33,
+    42,
+    83
+  ]
+}

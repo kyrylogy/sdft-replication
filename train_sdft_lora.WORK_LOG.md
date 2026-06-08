@@ -115,6 +115,79 @@ accelerate launch train_sdft_lora.py \
 
 Final LoRA adapter ends up at `<output_dir>/lora_adapter/` via `student_peft.save_pretrained(...)`, with tokenizer alongside. Load later via `PeftModel.from_pretrained(base_model, "<output_dir>/lora_adapter")`.
 
+## File inventory — what each file does and which ones each command touches
+
+### What each file does
+
+| File | Role | Source |
+|---|---|---|
+| `train_sdft_lora.py` | LoRA SDFT trainer entrypoint. Loads student+teacher, applies LoRA to student, builds DistilConfig, filters holdout indices from train_data, runs DistilTrainer, saves adapter. | created this session |
+| `distil_trainer.py` | The `DistilTrainer` class (subclasses TRL `GRPOTrainer`, which subclasses HF `Trainer`). Defines the training loop, on-policy student generation, forward-KL loss, optional EMA sync callback, vLLM bridge. **Not modified by us.** | upstream `idanshen/Self-Distillation` |
+| `distil_config.py` | `DistilConfig` dataclass extending TRL `GRPOConfig`. All knobs: lengths, lr, KL weights (alpha/beta), sync_ref_model trio, vLLM toggles, num_loss_tokens_to_skip. **Not modified.** | upstream |
+| `main.py` | The repo's original full-finetune trainer (full params, no LoRA, vLLM-colocate, sync_ref_model=True). We do not run this; we read it for fidelity reference. | upstream |
+| `eval_tooluse.py` | Eval runner. Takes a model path (HF id or LoRA adapter dir), runs zero-shot or teacher-ceiling generation on a tooluse arrow dataset, scores by exact action+input match. Modified this session: added `--engine`, `--eval_data`, `--teacher_ceiling`, MPS path. | upstream (modified) |
+| `eval_science.py` | Eval runner for the science dataset. Not used on this branch. | upstream |
+| `experiment.py` | Tiny smoke driver someone added locally. Untracked. Not used by our trainer. | local untracked |
+| `requirements.txt` | Cluster-shape pins (includes vllm/flashinfer/deepspeed — CUDA-only). | upstream |
+| `requirements-laptop.txt` | Minimal verified MPS subset (no vllm/flashinfer/deepspeed/wandb). | created this session |
+| `data/tooluse_data/train_data/` | Arrow dataset, 4046 rows. Columns: prompt, name, description, nl_documentation, instruction, golden_answer, **golden_response** (the real Thought+Action+Action_Input chain — what the teacher demo uses). | upstream |
+| `data/tooluse_data/eval_data/` | Arrow dataset, 97 rows. No golden_response. The original 10-API eval set (regenerated 2026-03-12 per README). | upstream |
+| `data/tooluse_data/train_subset_holdout/` | Arrow dataset, 100 rows carved from train_data with seed=42. Has golden_response. Used as a held-out eval that supports real-Thought teacher conditioning. | created this session |
+| `data/tooluse_data/train_subset_holdout_indices.json` | Manifest: `{source_dataset, source_rows: 4046, seed: 42, k: 100, indices: [...]}`. The trainer drops these indices from train_data before training. | created this session |
+| `baselines/qwen2.5-3b-instruct*/` | Saved eval results (eval_results.json + eval_responses.json per run). 4 frozen-scorer runs: eval-base 27.84%, eval-ceiling-synth 78.35%, holdout-base 18%, holdout-ceiling-real 50%. | created this session |
+| `train_sdft_lora.WORK_LOG.md` | This file. | created this session |
+
+### Which files each command actually touches
+
+**Laptop smoke / 1-GPU / multi-GPU SDFT training** (`train_sdft_lora.py`):
+
+```
+train_sdft_lora.py                                    ← entrypoint
+  ├─ imports → distil_trainer.py  (DistilTrainer)
+  ├─ imports → distil_config.py   (DistilConfig)
+  ├─ reads   → data/tooluse_data/train_data/             (input dataset)
+  ├─ reads   → data/tooluse_data/train_subset_holdout_indices.json   (holdout filter)
+  ├─ downloads → Qwen/Qwen2.5-3B-Instruct from HF Hub (cached at ~/.cache/huggingface/hub)
+  └─ writes  → <output_dir>/lora_adapter/                (adapter + tokenizer)
+```
+
+DDP launch adds nothing to the file dependency graph — accelerate just spawns N copies of the same process:
+```
+accelerate launch --multi_gpu --num_processes 4 train_sdft_lora.py ...
+```
+
+**Evaluating a base model** (`eval_tooluse.py`):
+
+```
+eval_tooluse.py                                       ← entrypoint
+  ├─ reads → data/tooluse_data/eval_data/                (default eval set)
+  │           OR data/tooluse_data/train_subset_holdout/  (when --eval_data is set)
+  ├─ downloads → <model_path> from HF Hub (e.g. Qwen/Qwen2.5-3B-Instruct)
+  └─ writes → <output_dir>/eval_results.json + eval_responses.json
+```
+
+**Evaluating a LoRA-trained adapter** (not wired yet — what you'd need to do):
+
+Today `eval_tooluse.py` loads a single model id with `AutoModelForCausalLM.from_pretrained`. To eval a LoRA adapter you'd either:
+1. Merge first: `model.merge_and_unload()`, save as a regular HF model, point `eval_tooluse.py --model_path` at that. Simple, works with current eval code unchanged.
+2. Or add a `--adapter_path` flag to `eval_tooluse.py` that wraps the base with `PeftModel.from_pretrained`. Slightly cleaner, no merge step. Not done yet.
+
+Either way, the eval set stays the same (eval_data for paper-comparable numbers, train_subset_holdout for Thought-rich rows), and the same scorer (regex extract + Counter+dict-equal) is reused.
+
+### Branch and commit map
+
+Branch: `baseline-qwen2.5-mps` (local only, `origin` is upstream). 8 commits, most-recent-first:
+
+```
+0392b81 Pin laptop/MPS subset of dependencies + ignore HF datasets caches
+4aa24f9 Add LoRA SDFT trainer (MPS-friendly) + work log
+70a96e8 Holdout experiments: baseline 18%, real-Thought ceiling 50%
+3eae511 Carve 100-row holdout from train_data for Thought-bearing eval
+9223674 Add teacher-ceiling experiment: matched-demo ICL per row, 78.35%
+32cc9b8 Add Qwen2.5-3B-Instruct baseline on 97-row tooluse eval
+fff85df Add HF-transformers + MPS path to eval_tooluse.py for baseline runs
+```
+
 ## Open questions / known caveats
 - **Did the script actually run on MPS?** Unknown — blocked at `peft` import. After installing the dep, watch step 1 for: (a) finite loss, (b) non-zero gradient norms on LoRA params, (c) no OOM with student+teacher both fp32 + grad-checkpointing on 24GB.
 - **`gradient_checkpointing=True` + PEFT footgun**: HF Trainer normally calls `model.enable_input_require_grads()` when it detects PEFT, but `DistilTrainer` is a custom subclass and we did not grep an explicit handling. If LoRA gradients come back zero on step 1, add `student_peft.enable_input_require_grads()` after `apply_lora()`.

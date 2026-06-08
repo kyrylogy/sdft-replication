@@ -6,6 +6,25 @@
 # those completions trains only the LoRA adapter. Teacher weights are frozen (no grads,
 # no EMA sync). Uses DistilTrainer/DistilConfig from this repo (loss not reimplemented).
 # vLLM, DeepSpeed, FSDP, and bf16 are disabled for MPS compatibility.
+#
+# Invocations:
+#   # MPS (laptop) — single process
+#   python train_sdft_lora.py --max_samples 8 --max_steps 1 --output_dir /tmp/sdft_smoke
+#
+#   # 1 GPU (CUDA) — single process, identical args to MPS
+#   python train_sdft_lora.py --max_steps 200 --output_dir runs/sdft_1gpu
+#
+#   # 2–4 GPU DDP — accelerate handles data-parallel sharding of the batch
+#   accelerate launch --multi_gpu --num_processes 4 \
+#     train_sdft_lora.py --max_steps 200 --output_dir runs/sdft_4gpu
+#
+# Multi-GPU notes: no code changes are required for DDP because DistilTrainer is a
+# TRL/HF Trainer subclass — accelerate replicates the model on each rank and shards
+# the batch automatically. Effective batch size = per_device_train_batch_size *
+# num_processes * gradient_accumulation_steps. LoRA's trainable params are small
+# (~0.24% of the 3B base), but memory is dominated by holding student + teacher
+# resident: ~12 GB for two 3B copies in bf16, ~28 GB for two 7B copies. So 3B fits
+# on one 24 GB GPU comfortably; 7B wants 40 GB+ on one GPU or two 24 GB GPUs.
 
 import argparse
 import json
@@ -337,12 +356,13 @@ def main():
     # 7) Train.
     trainer.train()
 
-    # 8) Save LoRA adapter (defensive: in addition to trainer's own save_model).
-    adapter_dir = os.path.join(args.output_dir, "lora_adapter")
-    os.makedirs(adapter_dir, exist_ok=True)
-    student_peft.save_pretrained(adapter_dir)
-    tokenizer.save_pretrained(adapter_dir)
-    print(f"[save] LoRA adapter written to {adapter_dir}")
+    # 8) Save LoRA adapter (rank-0 only under DDP, defensive on single-process too).
+    if trainer.accelerator.is_main_process:
+        adapter_dir = os.path.join(args.output_dir, "lora_adapter")
+        os.makedirs(adapter_dir, exist_ok=True)
+        student_peft.save_pretrained(adapter_dir)
+        tokenizer.save_pretrained(adapter_dir)
+        print(f"[save] LoRA adapter written to {adapter_dir}")
 
 
 if __name__ == "__main__":

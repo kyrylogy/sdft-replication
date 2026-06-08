@@ -278,11 +278,16 @@ def build_distil_config(args) -> DistilConfig:
         save_steps=1_000_000,  # effectively disabled; we save the adapter manually.
         report_to="none",
         log_completions=False,
-        # Teacher: EMA sync OFF. main.py uses TR-DPO-style sync at alpha=0.01,
-        # but that callback iterates model.parameters() against ref_model.parameters()
-        # and crashes on LoRA A/B shape mismatch. Under LoRA the student's base is
-        # frozen anyway, so the mix would be a no-op even patched. Paper SDFT also
-        # has no EMA — this is a repo extension, see WORK_LOG.md.
+        # Teacher: EMA sync OFF. NOTE — this is a DEVIATION from the paper.
+        # Appendix A.3 ablates teacher choices and recommends EMA-of-student
+        # (which is what main.py wires via sync_ref_model=True, alpha=0.01).
+        # We disable it here only because the callback iterates
+        # model.parameters() against ref_model.parameters() and crashes on the
+        # LoRA A/B shape mismatch. Even with that patched, EMA-mixing
+        # teacher_base ← student_base is a no-op under LoRA (student's base is
+        # frozen). A proper paper-faithful LoRA SDFT would need a different
+        # mechanism (teacher LoRA + adapter EMA, or merged-weight EMA).
+        # See WORK_LOG.md for details.
         sync_ref_model=False,
         num_loss_tokens_to_skip=3,
         # KL losses.

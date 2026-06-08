@@ -166,13 +166,18 @@ eval_tooluse.py                                       ← entrypoint
   └─ writes → <output_dir>/eval_results.json + eval_responses.json
 ```
 
-**Evaluating a LoRA-trained adapter** (not wired yet — what you'd need to do):
+**Evaluating a LoRA-trained adapter** — wired via `--adapter_path`:
 
-Today `eval_tooluse.py` loads a single model id with `AutoModelForCausalLM.from_pretrained`. To eval a LoRA adapter you'd either:
-1. Merge first: `model.merge_and_unload()`, save as a regular HF model, point `eval_tooluse.py --model_path` at that. Simple, works with current eval code unchanged.
-2. Or add a `--adapter_path` flag to `eval_tooluse.py` that wraps the base with `PeftModel.from_pretrained`. Slightly cleaner, no merge step. Not done yet.
+```bash
+.venv/bin/python eval_tooluse.py \
+  --model_path Qwen/Qwen2.5-3B-Instruct \
+  --adapter_path <output_dir>/lora_adapter \
+  --output_dir <eval_dir>
+```
 
-Either way, the eval set stays the same (eval_data for paper-comparable numbers, train_subset_holdout for Thought-rich rows), and the same scorer (regex extract + Counter+dict-equal) is reused.
+`load_hf_model_and_tokenizer` loads the base from `--model_path`, wraps with `PeftModel.from_pretrained(base, adapter_path)`, and pulls the tokenizer from the adapter dir if it has `tokenizer_config.json` there (the LoRA save_pretrained writes it). vLLM engine rejects `--adapter_path` with a clear `SystemExit` — for vLLM use, merge the adapter first via `model.merge_and_unload()` and point `--model_path` at the merged dir.
+
+Same eval set, same scorer (regex extract + Counter+dict-equal), same JSON shape — so an adapter-eval row sits directly comparable to the baseline rows in the same `baselines/` directory.
 
 ### Branch and commit map
 

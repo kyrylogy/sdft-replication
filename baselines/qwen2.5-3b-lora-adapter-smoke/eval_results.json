@@ -1,0 +1,23 @@
+{
+  "accuracy": 0.6666666666666666,
+  "num_correct": 2,
+  "num_total": 3,
+  "per_sample_scores": [
+    1,
+    0,
+    1
+  ],
+  "config": {
+    "model_path": "Qwen/Qwen2.5-3B-Instruct",
+    "max_new_tokens": 512,
+    "temperature": 0.0,
+    "engine": "hf",
+    "device": "mps",
+    "dtype": "torch.bfloat16",
+    "max_samples": 3,
+    "teacher_ceiling": false,
+    "eval_data": "data/tooluse_data/eval_data",
+    "demo_source": null,
+    "adapter_path": "/tmp/sdft_lora_smoke2/lora_adapter"
+  }
+}

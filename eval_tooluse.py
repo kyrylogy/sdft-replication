@@ -70,6 +70,10 @@ def parse_args():
                         help="Wrap each prompt with TEACHER_TEMPLATE using that row's own "
                              "matched demonstration. Prefers golden_response when the dataset "
                              "has it; falls back to synthesis from golden_answer otherwise.")
+    parser.add_argument("--adapter_path", type=str, default=None,
+                        help="Optional PEFT/LoRA adapter directory to wrap on top of "
+                             "--model_path (the base). HF engine only; vLLM path rejects it. "
+                             "When set, tokenizer is loaded from the adapter dir if present.")
     return parser.parse_args()
 
 
@@ -111,18 +115,29 @@ def load_vllm_model_and_tokenizer(model_path, gpu_memory_utilization=0.8):
     return llm, tokenizer
 
 
-def load_hf_model_and_tokenizer(model_path, device, dtype):
-    """Load model using HF transformers (used on MPS/CPU and as a vLLM-free fallback on CUDA)."""
+def load_hf_model_and_tokenizer(model_path, device, dtype, adapter_path=None):
+    """Load model using HF transformers (used on MPS/CPU and as a vLLM-free fallback on CUDA).
+
+    If adapter_path is given, wrap the base from model_path with the LoRA/PEFT
+    adapter saved there. Tokenizer is loaded from the adapter dir when it carries
+    one (PEFT save_pretrained writes the tokenizer alongside the adapter); else
+    from model_path. This is the path for evaluating a trained adapter.
+    """
     from transformers import AutoModelForCausalLM
-    print(f"Loading model from {model_path} via HF transformers on {device} ({dtype})")
-    tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side='left', trust_remote_code=True)
+    print(f"Loading base from {model_path} via HF transformers on {device} ({dtype})")
+    tokenizer_src = adapter_path if (adapter_path and os.path.isfile(os.path.join(adapter_path, "tokenizer_config.json"))) else model_path
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_src, padding_side='left', trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=dtype,
+        dtype=dtype,
         trust_remote_code=True,
     ).to(device)
+    if adapter_path:
+        from peft import PeftModel
+        print(f"Wrapping with PEFT adapter from {adapter_path}")
+        model = PeftModel.from_pretrained(model, adapter_path)
     model.eval()
     return model, tokenizer
 
@@ -252,9 +267,11 @@ def main():
 
     # Load model + tokenizer
     if engine == "vllm":
+        if args.adapter_path:
+            raise SystemExit("--adapter_path is HF-engine only; pass --engine hf or merge the adapter first.")
         llm, tokenizer = load_vllm_model_and_tokenizer(args.model_path)
     else:
-        model, tokenizer = load_hf_model_and_tokenizer(args.model_path, device, dtype)
+        model, tokenizer = load_hf_model_and_tokenizer(args.model_path, device, dtype, adapter_path=args.adapter_path)
 
     # Load and (optionally) cap test data
     test_data, demo_source = load_test_data(
@@ -315,6 +332,7 @@ def main():
             "teacher_ceiling": args.teacher_ceiling,
             "eval_data": args.eval_data,
             "demo_source": demo_source,
+            "adapter_path": args.adapter_path,
         }
     }
 

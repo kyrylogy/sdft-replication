@@ -44,10 +44,9 @@ from distil_config import DistilConfig
 # ---------------------------------------------------------------------------
 # Module constants
 # ---------------------------------------------------------------------------
-HOLDOUT_PATH = Path(
-    "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/data/tooluse_data/train_subset_holdout_indices.json"
-)
-TRAIN_DATA_PATH = "data/tooluse_data/train_data"
+_REPO = Path(__file__).resolve().parent
+HOLDOUT_PATH = _REPO / "data/tooluse_data/train_subset_holdout_indices.json"
+TRAIN_DATA_PATH = _REPO / "data/tooluse_data/train_data"
 
 # Byte-identical to main.py lines 30-37 (preserves leading newline inside the triple-quoted string).
 TEACHER_TEMPLATE = Template("""
@@ -113,10 +112,10 @@ def parse_args():
         help="Skip the 100-row holdout exclusion. Use ONLY for debugging.",
     )
     parser.add_argument(
-        "--ref_model_mixup_alpha",
-        type=float,
-        default=0.01,
-        help="EMA mixup alpha for the teacher (ref) model; matches main.py default.",
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed for shuffle and DistilConfig.",
     )
     return parser.parse_args()
 
@@ -185,17 +184,16 @@ def load_tooluse_dataset_filtered(seed: int, no_holdout_filter: bool, max_sample
 def build_models(model_name: str):
     """Load student and teacher (both fp32, same base id), freeze teacher, load tokenizer."""
     print(f"[models] loading student from {model_name} (fp32)")
-    student = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
+    student = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float32)
 
     print(f"[models] loading teacher from {model_name} (fp32)")
-    teacher = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float32)
+    teacher = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float32)
 
-    # Defensive freeze: requires_grad=False on every teacher param + eval mode.
-    # DistilTrainer.accelerator.prepare_model(ref_model, evaluation_mode=True) does NOT
-    # set requires_grad=False, so we do it here to keep autograd graph minimal.
+    # DistilTrainer.accelerator.prepare_model(ref_model, evaluation_mode=True)
+    # puts the model in eval mode but does NOT freeze grads — do it here so the
+    # teacher cannot accidentally accumulate gradients via the KL backward graph.
     for p in teacher.parameters():
         p.requires_grad_(False)
-    teacher.eval()
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return student, teacher, tokenizer
@@ -223,7 +221,6 @@ def apply_lora(student, lora_r: int, lora_alpha: int):
         task_type=TaskType.CAUSAL_LM,
     )
     student_peft = get_peft_model(student, lora_cfg)
-    student_peft.print_trainable_parameters()
     return student_peft
 
 
@@ -263,7 +260,7 @@ def build_distil_config(args) -> DistilConfig:
         # Precision: fp32 on MPS for stable KL/log_softmax math.
         bf16=False,
         fp16=False,
-        # Batch / step budget — laptop scale.
+        # Batch / step budget — laptop scale. max_steps wins over num_train_epochs.
         per_device_train_batch_size=1,
         gradient_accumulation_steps=1,
         max_prompt_length=512,
@@ -271,7 +268,6 @@ def build_distil_config(args) -> DistilConfig:
         num_generations=1,
         num_iterations=1,
         max_steps=args.max_steps,
-        num_train_epochs=1,
         # Optimizer schedule.
         learning_rate=args.learning_rate,
         warmup_ratio=0.1,
@@ -282,14 +278,11 @@ def build_distil_config(args) -> DistilConfig:
         save_steps=1_000_000,  # effectively disabled; we save the adapter manually.
         report_to="none",
         log_completions=False,
-        # Teacher: NO EMA sync under LoRA.
-        # main.py uses sync_ref_model=True with alpha=0.01 (TR-DPO-style EMA pull of
-        # teacher toward student) — but that callback iterates model.parameters() and
-        # tries shape-aligned mul_/add_ against ref_model.parameters(). Under PEFT the
-        # student's parameter list includes LoRA A/B matrices that have no counterpart
-        # on the teacher, causing a tensor-shape mismatch at on_step_end. Also: with
-        # LoRA the student's base weights are frozen, so EMA-mixing teacher-base
-        # toward student-base would be a no-op even if it didn't crash. Disabling.
+        # Teacher: EMA sync OFF. main.py uses TR-DPO-style sync at alpha=0.01,
+        # but that callback iterates model.parameters() against ref_model.parameters()
+        # and crashes on LoRA A/B shape mismatch. Under LoRA the student's base is
+        # frozen anyway, so the mix would be a no-op even patched. Paper SDFT also
+        # has no EMA — this is a repo extension, see WORK_LOG.md.
         sync_ref_model=False,
         num_loss_tokens_to_skip=3,
         # KL losses.
@@ -304,7 +297,7 @@ def build_distil_config(args) -> DistilConfig:
         # Dataset plumbing — must keep 'prompt' / 'teacher_prompt' columns alive.
         remove_unused_columns=False,
         # Determinism / output.
-        seed=args.seed if hasattr(args, "seed") else 42,
+        seed=args.seed,
         output_dir=args.output_dir,
     )
 
@@ -314,8 +307,6 @@ def build_distil_config(args) -> DistilConfig:
 # ---------------------------------------------------------------------------
 def main():
     args = parse_args()
-    # Inject a fixed seed (not a CLI flag per spec, but DistilConfig needs one).
-    args.seed = 42
 
     # 1) Models.
     student, teacher, tokenizer = build_models(args.model_name)

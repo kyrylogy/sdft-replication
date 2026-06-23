@@ -117,6 +117,29 @@ def parse_args():
         default=42,
         help="Seed for shuffle and DistilConfig.",
     )
+    # ---- CUDA / cluster knobs (default to MPS-safe values) ----
+    parser.add_argument("--use_vllm", action="store_true",
+                        help="Enable vLLM for student rollouts. Requires CUDA. Faster than HF generate.")
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.4,
+                        help="Fraction of GPU memory vLLM can use. Lower this on shared GPUs (someone else's process).")
+    parser.add_argument("--vllm_importance_sampling_correction", action="store_true",
+                        help="Enable IS correction when vLLM and training step rollouts can diverge. Pair with --use_vllm.")
+    parser.add_argument("--bf16", action="store_true",
+                        help="Load models in bf16 and run training in bf16. CUDA-only — keep off on MPS.")
+    parser.add_argument("--max_completion_length", type=int, default=256,
+                        help="Token cap on student completions. 256 was the MPS budget; bump to 1024 on CUDA.")
+    parser.add_argument("--max_prompt_length", type=int, default=512,
+                        help="Token cap on prompts. 512 was the MPS budget; bump to 1024 on CUDA.")
+    parser.add_argument("--per_device_train_batch_size", type=int, default=1)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
+    parser.add_argument("--num_train_epochs", type=float, default=None,
+                        help="If set, overrides --max_steps. Use for cluster runs (e.g. 2.0 per paper).")
+    parser.add_argument("--enable_input_require_grads", action="store_true",
+                        help="Defensive call after LoRA wrap when gradient_checkpointing=True + PEFT + DistilTrainer. "
+                             "Flip on if step-1 LoRA grad_norm comes back zero.")
+    parser.add_argument("--generate_from_teacher", action="store_true",
+                        help="Use teacher (not student) for rollouts -> trainer becomes ONLINE SFT. "
+                             "Requires --use_vllm (HF generate path always uses student, regardless of this flag).")
     return parser.parse_args()
 
 
@@ -181,13 +204,14 @@ def load_tooluse_dataset_filtered(seed: int, no_holdout_filter: bool, max_sample
 # ---------------------------------------------------------------------------
 # Model construction
 # ---------------------------------------------------------------------------
-def build_models(model_name: str):
-    """Load student and teacher (both fp32, same base id), freeze teacher, load tokenizer."""
-    print(f"[models] loading student from {model_name} (fp32)")
-    student = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float32)
+def build_models(model_name: str, bf16: bool = False):
+    """Load student and teacher (same base id), freeze teacher, load tokenizer."""
+    dtype = torch.bfloat16 if bf16 else torch.float32
+    print(f"[models] loading student from {model_name} ({dtype})")
+    student = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
 
-    print(f"[models] loading teacher from {model_name} (fp32)")
-    teacher = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.float32)
+    print(f"[models] loading teacher from {model_name} ({dtype})")
+    teacher = AutoModelForCausalLM.from_pretrained(model_name, dtype=dtype)
 
     # DistilTrainer.accelerator.prepare_model(ref_model, evaluation_mode=True)
     # puts the model in eval mode but does NOT freeze grads — do it here so the
@@ -253,21 +277,27 @@ def build_distil_config(args) -> DistilConfig:
     distil_trainer.py:1252-1258 ALWAYS samples from the student, regardless of
     this flag. We pin it False so SDFT on-policy semantics are explicit.
     """
+    # If --num_train_epochs is set, hand max_steps=-1 to disable the step cap.
+    max_steps_val = -1 if args.num_train_epochs is not None else args.max_steps
+    num_epochs_val = args.num_train_epochs if args.num_train_epochs is not None else 1.0
     return DistilConfig(
-        # vLLM completely disabled (CUDA-only).
-        use_vllm=False,
-        vllm_importance_sampling_correction=False,
-        # Precision: fp32 on MPS for stable KL/log_softmax math.
-        bf16=False,
+        # vLLM rollouts. CUDA-only; flipped by --use_vllm on cluster.
+        use_vllm=args.use_vllm,
+        vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+        vllm_importance_sampling_correction=args.vllm_importance_sampling_correction,
+        generate_from_teacher=args.generate_from_teacher,  # True => online SFT (requires vllm)
+        # Precision: fp32 on MPS for stable KL/log_softmax math; bf16 on CUDA.
+        bf16=args.bf16,
         fp16=False,
-        # Batch / step budget — laptop scale. max_steps wins over num_train_epochs.
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=1,
-        max_prompt_length=512,
-        max_completion_length=256,
+        # Batch / step budget — caller decides.
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        max_prompt_length=args.max_prompt_length,
+        max_completion_length=args.max_completion_length,
         num_generations=1,
         num_iterations=1,
-        max_steps=args.max_steps,
+        max_steps=max_steps_val,
+        num_train_epochs=num_epochs_val,
         # Optimizer schedule.
         learning_rate=args.learning_rate,
         warmup_ratio=0.1,
@@ -313,11 +343,27 @@ def build_distil_config(args) -> DistilConfig:
 def main():
     args = parse_args()
 
+    # SFT-LoRA mode requires vLLM — HF generate path always uses student
+    # (distil_trainer.py:1252-1258), regardless of generate_from_teacher.
+    if args.generate_from_teacher and not args.use_vllm:
+        raise SystemExit(
+            "--generate_from_teacher requires --use_vllm; the HF generate path "
+            "always samples from the student. Pass both flags for SFT-LoRA mode."
+        )
+
     # 1) Models.
-    student, teacher, tokenizer = build_models(args.model_name)
+    student, teacher, tokenizer = build_models(args.model_name, bf16=args.bf16)
 
     # 2) LoRA wrap student only.
     student_peft = apply_lora(student, args.lora_r, args.lora_alpha)
+
+    # Defensive: when gradient_checkpointing=True + PEFT + a custom Trainer
+    # subclass (DistilTrainer), HF's auto-detection of PEFT may not fire and
+    # input requires_grad gets dropped. Flip --enable_input_require_grads if
+    # step-1 LoRA grad_norm comes back zero on cluster.
+    if args.enable_input_require_grads:
+        student_peft.enable_input_require_grads()
+        print("[lora] called student_peft.enable_input_require_grads()")
 
     # 3) Dataset (load -> holdout filter -> format -> shuffle -> optional truncate).
     train_dataset = load_tooluse_dataset_filtered(

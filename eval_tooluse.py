@@ -17,6 +17,10 @@ MODEL_REGISTRY = {
     "qwen2.5-3b": "Qwen/Qwen2.5-3B-Instruct",   # base/ceiling cells run with this
     "qwen2.5-7b": "Qwen/Qwen2.5-7B-Instruct",   # paper anchor (42% reference)
     "qwen3-4b":   "Qwen/Qwen3-4B",               # newer-gen comparison; adjust suffix when known
+    # Calibration checkpoints — reference SDFT-trained 7B models for validating
+    # our eval pipeline against known numbers (expect ~70 / ~70 / ~42.2).
+    "sdft-7b-improbable": "improbableaimit/sdft-tooluse-7b",
+    "sdft-7b-kickit":     "KickItLikeShika/qwen-2.5-7b-instruct-sdft-tooluse",
 }
 
 

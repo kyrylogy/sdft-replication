@@ -11,6 +11,20 @@ from string import Template
 from tqdm import tqdm
 
 
+# Models we evaluate on ToolAlpaca. Short keys can be passed via --model_path
+# and are resolved to HF hub ids below; full HF ids or local paths also work.
+MODEL_REGISTRY = {
+    "qwen2.5-3b": "Qwen/Qwen2.5-3B-Instruct",   # base/ceiling cells run with this
+    "qwen2.5-7b": "Qwen/Qwen2.5-7B-Instruct",   # paper anchor (42% reference)
+    "qwen3-4b":   "Qwen/Qwen3-4B",               # newer-gen comparison; adjust suffix when known
+}
+
+
+def resolve_model_id(model_path: str) -> str:
+    """Map MODEL_REGISTRY short name -> HF hub id; pass through otherwise."""
+    return MODEL_REGISTRY.get(model_path, model_path)
+
+
 # Mirrors TEACHER_TEMPLATE in experiment.py — kept here so eval_tooluse.py
 # stays self-contained. If experiment.py changes its template, change this too.
 TEACHER_TEMPLATE = Template("""
@@ -44,9 +58,11 @@ def _format_demo_from_row(row):
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate a model on tooluse test set")
     parser.add_argument("--model_path", type=str, required=True,
-                        help="HF hub id or local path of the model to evaluate")
-    parser.add_argument("--max_new_tokens", type=int, default=1024,
-                        help="Maximum number of tokens to generate")
+                        help="HF hub id, local path, or MODEL_REGISTRY short key "
+                             "(e.g. 'qwen2.5-3b', 'qwen2.5-7b', 'qwen3-4b').")
+    parser.add_argument("--max_new_tokens", type=int, default=2048,
+                        help="Maximum tokens to generate (default 2048 — the reproduction "
+                             "report's reference protocol; earlier baselines used 1024).")
     parser.add_argument("--output_dir", type=str, default=None,
                         help="Directory to save evaluation results (defaults to model_path)")
     parser.add_argument("--temperature", type=float, default=0.0,
@@ -260,6 +276,10 @@ def evaluate_correctness(responses, golden_answers):
 def main():
     args = parse_args()
 
+    # Resolve MODEL_REGISTRY short key; remember original for traceability.
+    model_short_name = args.model_path if args.model_path in MODEL_REGISTRY else None
+    args.model_path = resolve_model_id(args.model_path)
+
     engine = resolve_engine(args.engine)
     device = resolve_device(args.device) if engine == "hf" else "cuda"
     dtype = resolve_dtype(args.dtype, device) if engine == "hf" else torch.bfloat16
@@ -323,6 +343,7 @@ def main():
         "per_sample_scores": scores,
         "config": {
             "model_path": args.model_path,
+            "model_short_name": model_short_name,
             "max_new_tokens": args.max_new_tokens,
             "temperature": args.temperature,
             "engine": engine,

@@ -43,21 +43,26 @@ mkdir -p "$LOG_DIR"
 VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON="${VENV_DIR}/bin/python"
 
+# Knobs — every one of these honors environment overrides at call time:
+#   VLLM_MEM=0.25 NUM_TRAIN_EPOCHS=1.0 ./run_cluster.sh phase4
+# Edit only the right-hand-side defaults; the `:-` pattern picks the env
+# value if set, otherwise falls back here.
+
 # Eval hyperparameters (reference protocol)
-EVAL_MAX_NEW_TOKENS=2048
-EVAL_TEMP=0.0
+EVAL_MAX_NEW_TOKENS="${EVAL_MAX_NEW_TOKENS:-2048}"
+EVAL_TEMP="${EVAL_TEMP:-0.0}"
 
 # LoRA training hyperparameters
-LORA_R=16
-LORA_ALPHA=32
-LORA_LR=1e-4
-NUM_TRAIN_EPOCHS=2.0
-GRAD_ACCUM=8
+LORA_R="${LORA_R:-16}"
+LORA_ALPHA="${LORA_ALPHA:-32}"
+LORA_LR="${LORA_LR:-1e-4}"
+NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
+GRAD_ACCUM="${GRAD_ACCUM:-8}"
 
 # vLLM memory utilization — matches main.py's paper-default (0.3 leaves room
 # for the training process + teacher in colocate mode).
-VLLM_MEM=0.3
-VLLM_MODE=colocate
+VLLM_MEM="${VLLM_MEM:-0.3}"
+VLLM_MODE="${VLLM_MODE:-colocate}"
 
 # ----------------------------------------------------------------------------
 # Helpers
@@ -473,7 +478,23 @@ Commands:
 
 Logs:       ${LOG_DIR}/<phase>/<step>.log
 Wall times: ${WALL_TIMES_CSV}
-Override:   RUN_TAG=<custom> ./run_cluster.sh ...     (changes the log dir)
+
+Env overrides (prefix the command):
+  RUN_TAG=<str>            log dir suffix (default: today's YYYYMMDD)
+  VENV_DIR=<path>          venv location (default: .venv)
+  EVAL_MAX_NEW_TOKENS=<n>  default 2048
+  EVAL_TEMP=<f>            default 0.0 (greedy)
+  LORA_R=<n>               default 16
+  LORA_ALPHA=<n>           default 32
+  LORA_LR=<f>              default 1e-4
+  NUM_TRAIN_EPOCHS=<f>     default 2.0
+  GRAD_ACCUM=<n>           default 8
+  VLLM_MEM=<f>             default 0.3 (paper-aligned)
+  VLLM_MODE=<colocate|server>  default colocate
+
+Examples:
+  VLLM_MEM=0.25 ./run_cluster.sh phase4
+  RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 LORA_R=32 LORA_ALPHA=64 ./run_cluster.sh phase4
 EOF
         ;;
     *)

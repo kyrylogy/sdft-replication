@@ -54,8 +54,10 @@ LORA_LR=1e-4
 NUM_TRAIN_EPOCHS=2.0
 GRAD_ACCUM=8
 
-# vLLM memory utilization — be conservative on a shared GPU.
-VLLM_MEM=0.4
+# vLLM memory utilization — matches main.py's paper-default (0.3 leaves room
+# for the training process + teacher in colocate mode).
+VLLM_MEM=0.3
+VLLM_MODE=colocate
 
 # ----------------------------------------------------------------------------
 # Helpers
@@ -259,8 +261,11 @@ _train_lora() {
     # ~33GB shared-GPU budget).
     case "$model_short" in
         qwen2.5-3b)
-            extra_flags+=(--use_vllm --vllm_importance_sampling_correction
-                          --vllm_gpu_memory_utilization "$VLLM_MEM")
+            extra_flags+=(--use_vllm
+                          --vllm_mode "$VLLM_MODE"
+                          --vllm_gpu_memory_utilization "$VLLM_MEM"
+                          --vllm_enable_sleep_mode
+                          --vllm_importance_sampling_correction)
             ;;
         qwen2.5-7b)
             # NO vLLM. SFT-LoRA without vLLM is impossible (generate_from_teacher

@@ -120,8 +120,16 @@ def parse_args():
     # ---- CUDA / cluster knobs (default to MPS-safe values) ----
     parser.add_argument("--use_vllm", action="store_true",
                         help="Enable vLLM for student rollouts. Requires CUDA. Faster than HF generate.")
-    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.4,
-                        help="Fraction of GPU memory vLLM can use. Lower this on shared GPUs (someone else's process).")
+    parser.add_argument("--vllm_mode", type=str, default="colocate",
+                        choices=["colocate", "server"],
+                        help="vLLM placement. 'colocate' shares the training GPU (paper-default in main.py); "
+                             "'server' expects a separate vLLM server. Inert when --use_vllm is off.")
+    parser.add_argument("--vllm_gpu_memory_utilization", type=float, default=0.3,
+                        help="Fraction of GPU memory vLLM may use. Paper main.py uses 0.3 to leave room "
+                             "for the training process + teacher. Lower further on shared GPUs.")
+    parser.add_argument("--vllm_enable_sleep_mode", action="store_true",
+                        help="Let vLLM sleep during gradient updates to free GPU memory (paper-default in main.py). "
+                             "Recommended when --vllm_mode=colocate.")
     parser.add_argument("--vllm_importance_sampling_correction", action="store_true",
                         help="Enable IS correction when vLLM and training step rollouts can diverge. Pair with --use_vllm.")
     parser.add_argument("--bf16", action="store_true",
@@ -283,7 +291,9 @@ def build_distil_config(args) -> DistilConfig:
     return DistilConfig(
         # vLLM rollouts. CUDA-only; flipped by --use_vllm on cluster.
         use_vllm=args.use_vllm,
+        vllm_mode=args.vllm_mode,
         vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+        vllm_enable_sleep_mode=args.vllm_enable_sleep_mode,
         vllm_importance_sampling_correction=args.vllm_importance_sampling_correction,
         generate_from_teacher=args.generate_from_teacher,  # True => online SFT (requires vllm)
         # Precision: fp32 on MPS for stable KL/log_softmax math; bf16 on CUDA.

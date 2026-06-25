@@ -59,9 +59,13 @@ LORA_LR="${LORA_LR:-1e-4}"
 NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
 GRAD_ACCUM="${GRAD_ACCUM:-8}"
 
-# vLLM memory utilization — matches main.py's paper-default (0.3 leaves room
-# for the training process + teacher in colocate mode).
-VLLM_MEM="${VLLM_MEM:-0.3}"
+# vLLM memory utilization. Default 0.5 sized for shared 40 GB A100 with the
+# ~15 GB orphan we're contending with: 0.5 * 40 = 20 GB for vLLM, fits inside
+# the ~24 GB free, leaves room for KV cache on short prompts.
+# - Eval (phase1/2/3): pure vLLM, 0.5 is safe.
+# - Training (phase4): colocated with HF student+teacher; main.py's paper
+#   default is 0.3 for that mode — override per-phase if you split the run.
+VLLM_MEM="${VLLM_MEM:-0.5}"
 VLLM_MODE="${VLLM_MODE:-colocate}"
 
 # ----------------------------------------------------------------------------
@@ -171,6 +175,7 @@ phase1_calibration() {
             "$PYTHON" eval_tooluse.py \
                 --model_path "$model" \
                 --engine vllm \
+                --gpu_memory_utilization "$VLLM_MEM" \
                 --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
                 --temperature "$EVAL_TEMP" \
                 --output_dir "$outdir"
@@ -188,6 +193,7 @@ phase2_7b_ceiling() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-7b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
             --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-7b-instruct-cuda
@@ -196,6 +202,7 @@ phase2_7b_ceiling() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-7b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
             --temperature "$EVAL_TEMP" \
@@ -213,6 +220,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-cuda
 
@@ -220,6 +228,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-teacher-ceiling-cuda
@@ -228,6 +237,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --eval_data data/tooluse_data/train_subset_holdout \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-holdout-base-cuda
@@ -236,6 +246,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
+            --gpu_memory_utilization "$VLLM_MEM" \
             --eval_data data/tooluse_data/train_subset_holdout \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
@@ -489,7 +500,7 @@ Env overrides (prefix the command):
   LORA_LR=<f>              default 1e-4
   NUM_TRAIN_EPOCHS=<f>     default 2.0
   GRAD_ACCUM=<n>           default 8
-  VLLM_MEM=<f>             default 0.3 (paper-aligned)
+  VLLM_MEM=<f>             default 0.5 (eval-safe; drop to 0.3 for training)
   VLLM_MODE=<colocate|server>  default colocate
 
 Examples:

@@ -94,6 +94,13 @@ def parse_args():
                         help="Optional PEFT/LoRA adapter directory to wrap on top of "
                              "--model_path (the base). HF engine only; vLLM path rejects it. "
                              "When set, tokenizer is loaded from the adapter dir if present.")
+    parser.add_argument("--gpu_memory_utilization", type=float, default=0.5,
+                        help="vLLM engine memory budget (fraction of GPU). Default 0.5 fits a "
+                             "shared 40 GB card with a ~15 GB orphan. Drop to 0.4/0.45 if vLLM "
+                             "init reports 'less than desired'; raise to 0.7/0.8 on a clean card.")
+    parser.add_argument("--no_enforce_eager", action="store_true",
+                        help="Disable vLLM's enforce_eager. Default is ON because CUDA-graph "
+                             "capture trips the Python.h include path on Py 3.12 in this image.")
     return parser.parse_args()
 
 
@@ -121,14 +128,24 @@ def resolve_dtype(dtype_name, device):
     return torch.bfloat16
 
 
-def load_vllm_model_and_tokenizer(model_path, gpu_memory_utilization=0.8):
-    """Load model using vLLM and tokenizer from the given path."""
+def load_vllm_model_and_tokenizer(model_path, gpu_memory_utilization=0.5, enforce_eager=True):
+    """Load model using vLLM and tokenizer from the given path.
+
+    Defaults are set for a shared 40 GB A100 with ~24 GB free (a ~15 GB
+    orphan eats the rest): 0.5 utilization = ~20 GB, fits inside the
+    free budget while leaving room for the KV cache on short prompts.
+    enforce_eager=True skips CUDA-graph capture which is the only
+    reasonable choice on Py 3.12 here — graph capture trips the
+    Python.h include path that this image doesn't have.
+    """
     from vllm import LLM  # lazy import: vllm is CUDA-only
-    print(f"Loading model from {model_path} via vLLM")
+    print(f"Loading model from {model_path} via vLLM "
+          f"(gpu_memory_utilization={gpu_memory_utilization}, enforce_eager={enforce_eager})")
     tokenizer = AutoTokenizer.from_pretrained(model_path, padding_side='left')
     llm = LLM(
         model=model_path,
         gpu_memory_utilization=gpu_memory_utilization,
+        enforce_eager=enforce_eager,
         dtype=torch.bfloat16,
         trust_remote_code=True,
     )
@@ -293,7 +310,11 @@ def main():
     if engine == "vllm":
         if args.adapter_path:
             raise SystemExit("--adapter_path is HF-engine only; pass --engine hf or merge the adapter first.")
-        llm, tokenizer = load_vllm_model_and_tokenizer(args.model_path)
+        llm, tokenizer = load_vllm_model_and_tokenizer(
+            args.model_path,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            enforce_eager=not args.no_enforce_eager,
+        )
     else:
         model, tokenizer = load_hf_model_and_tokenizer(args.model_path, device, dtype, adapter_path=args.adapter_path)
 
@@ -348,6 +369,8 @@ def main():
         "config": {
             "model_path": args.model_path,
             "model_short_name": model_short_name,
+            "vllm_gpu_memory_utilization": args.gpu_memory_utilization if engine == "vllm" else None,
+            "vllm_enforce_eager": (not args.no_enforce_eager) if engine == "vllm" else None,
             "max_new_tokens": args.max_new_tokens,
             "temperature": args.temperature,
             "engine": engine,

@@ -28,6 +28,8 @@
 # ============================================================================
 
 set -euo pipefail
+export HF_HOME=/var/nfs/hf-cache
+export HF_HUB_CACHE=/var/nfs/hf-cache/hub
 
 # ----------------------------------------------------------------------------
 # Paths / config

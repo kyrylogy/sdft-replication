@@ -1,11 +1,23 @@
-# SDFT (Self-Distillation Fine-Tuning) LoRA trainer — laptop / Apple-Silicon (MPS) edition.
+# SDFT (Self-Distillation Fine-Tuning) LoRA trainer — MPS and CUDA.
 # The teacher is the SAME base model conditioned in-context on a golden demonstration
 # (orig_prompt + "This is an example for a response..." + golden_response); the student
 # is the unconditioned base model wrapped with LoRA. Student samples its own completions
 # on-policy from the bare prompt; per-token forward KL between teacher and student over
-# those completions trains only the LoRA adapter. Teacher weights are frozen (no grads,
-# no EMA sync). Uses DistilTrainer/DistilConfig from this repo (loss not reimplemented).
-# vLLM, DeepSpeed, FSDP, and bf16 are disabled for MPS compatibility.
+# those completions trains only the LoRA adapter. Uses DistilTrainer/DistilConfig from
+# this repo (loss not reimplemented).
+#
+# Two teacher modes:
+#   default                : teacher base frozen, no EMA. This is the A.3
+#                            underperforming arm; use it as the lower-bound SDFT.
+#   --teacher_adapter_ema  : teacher gets its OWN LoRA (zero-init), and the
+#                            student's LoRA is EMA-mixed into the teacher's LoRA
+#                            every step. Recovers the paper's A.3 EMA-of-student
+#                            teacher mechanism under LoRA. This is the
+#                            paper-faithful arm.
+#
+# Set --generate_from_teacher (with --use_vllm) for the ONLINE SFT ablation.
+# For CLASSIC offline SFT (cross-entropy on golden_response, no teacher), use
+# train_sft_lora.py instead.
 #
 # Invocations:
 #   # MPS (laptop) — single process
@@ -34,11 +46,44 @@ from string import Template
 
 import torch
 from datasets import load_from_disk
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 from peft import LoraConfig, get_peft_model, TaskType
 
 from distil_trainer import DistilTrainer
 from distil_config import DistilConfig
+
+
+# ---------------------------------------------------------------------------
+# LoRA-aware EMA callback — recovers the paper's Appendix-A.3 EMA-of-student
+# teacher mechanism under LoRA. Frozen-base alone is the A.3 underperforming
+# arm; this callback updates the teacher's LoRA A/B from the student's LoRA
+# A/B so the teacher actually tracks the student rather than staying fixed.
+# Replaces MemoryEfficientSyncRefModelCallback (which iterates full
+# named_parameters() and crashes on the LoRA A/B vs base shape mismatch).
+# ---------------------------------------------------------------------------
+class LoRAEMACallback(TrainerCallback):
+    def __init__(self, student_module, teacher_module, alpha: float):
+        self.student_module = student_module
+        self.teacher_module = teacher_module
+        self.alpha = float(alpha)
+        student_lora = {n: p for n, p in student_module.named_parameters() if "lora_" in n}
+        teacher_lora = {n: p for n, p in teacher_module.named_parameters() if "lora_" in n}
+        self.pairs = []
+        for name, sp in student_lora.items():
+            tp = teacher_lora.get(name)
+            if tp is None or tp.shape != sp.shape:
+                continue
+            self.pairs.append((sp, tp))
+        print(
+            f"[ema] LoRAEMACallback matched {len(self.pairs)} LoRA parameter pairs "
+            f"(student_lora={len(student_lora)}, teacher_lora={len(teacher_lora)}); alpha={self.alpha}"
+        )
+        assert self.pairs, "LoRAEMACallback found no matching LoRA pairs — teacher LoRA wrap failed?"
+
+    @torch.no_grad()
+    def on_step_end(self, args, state, control, **kwargs):
+        for sp, tp in self.pairs:
+            tp.data.mul_(1.0 - self.alpha).add_(sp.data, alpha=self.alpha)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +193,13 @@ def parse_args():
     parser.add_argument("--generate_from_teacher", action="store_true",
                         help="Use teacher (not student) for rollouts -> trainer becomes ONLINE SFT. "
                              "Requires --use_vllm (HF generate path always uses student, regardless of this flag).")
+    parser.add_argument("--teacher_adapter_ema", action="store_true",
+                        help="Wrap the teacher with its OWN LoRA (zero-initialized) and EMA-mix the "
+                             "student's LoRA into it after every step. Recovers the paper's A.3 "
+                             "EMA-of-student teacher under LoRA — otherwise the teacher stays frozen "
+                             "(the A.3 underperforming ablation arm).")
+    parser.add_argument("--ema_alpha", type=float, default=0.01,
+                        help="EMA mixup rate for --teacher_adapter_ema (paper-aligned default 0.01).")
     # ---- Metric tracking ----
     parser.add_argument("--report_to", type=str, default="none",
                         choices=["none", "wandb", "tensorboard"],
@@ -383,8 +435,21 @@ def main():
     # 1) Models.
     student, teacher, tokenizer = build_models(args.model_name, bf16=args.bf16)
 
-    # 2) LoRA wrap student only.
+    # 2) LoRA wrap student.
     student_peft = apply_lora(student, args.lora_r, args.lora_alpha)
+
+    # 2b) If --teacher_adapter_ema, also LoRA-wrap the teacher (default init
+    #     puts B=0, so initial delta is zero → teacher initially behaves as
+    #     the bare base + ICL demo, identical to the frozen-teacher mode).
+    #     The student's LoRA will then be EMA-mixed into the teacher's LoRA
+    #     each step via LoRAEMACallback. Teacher base stays frozen.
+    teacher_peft = None
+    if args.teacher_adapter_ema:
+        teacher_peft = apply_lora(teacher, args.lora_r, args.lora_alpha)
+        # Teacher LoRA params should NOT receive gradients — EMA only touches .data.
+        for p in teacher_peft.parameters():
+            p.requires_grad_(False)
+        print("[ema] teacher LoRA-wrapped (B=0 init, no grads); EMA will track student LoRA")
 
     # Defensive: when gradient_checkpointing=True + PEFT + a custom Trainer
     # subclass (DistilTrainer), HF's auto-detection of PEFT may not fire and
@@ -409,14 +474,21 @@ def main():
 
     # 6) Trainer. We pass an EXPLICIT teacher object so distil_trainer.py:405
     #    self.ref_model = ref_model takes precedence over the PEFT-None auto-path
-    #    at distil_trainer.py:410-412.
+    #    at distil_trainer.py:410-412. With --teacher_adapter_ema, pass the
+    #    PEFT-wrapped teacher so the EMA callback can locate the LoRA params.
+    ref_model_for_trainer = teacher_peft if args.teacher_adapter_ema else teacher
     trainer = DistilTrainer(
         model=student_peft,
-        ref_model=teacher,
+        ref_model=ref_model_for_trainer,
         args=config,
         train_dataset=train_dataset,
         processing_class=tokenizer,
     )
+
+    if args.teacher_adapter_ema:
+        trainer.add_callback(
+            LoRAEMACallback(student_peft, teacher_peft, alpha=args.ema_alpha)
+        )
 
     # Defensive assertions against future TRL refactors.
     assert trainer.ref_model is not None, "ref_model was nulled by trainer — teacher would be student-base"

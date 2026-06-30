@@ -2,29 +2,54 @@
 # ============================================================================
 # run_cluster.sh — Single orchestrator for the cluster A100 run.
 #
-# Hardware assumption: ONE A100 40GB with ~7.5GB already used by another
-# process. Plan around ~33GB free, not the full 40GB. This is what fits:
-#   - 3B anything (eval, LoRA, ceiling): comfortable.
+# Hardware: ONE A100 40GB. Previously had a ~15GB orphan eating headroom; that
+# has cleared. The script's memory budgeting assumes the full ~40GB is now
+# available; if a co-tenant returns, drop VLLM_MEM_EVAL / VLLM_MEM_TRAIN to
+# compensate.
+#
+# What fits:
+#   - 3B anything (LoRA train, eval, ceiling): comfortable.
 #   - 7B eval, 7B LoRA in bf16: fine.
 #   - 7B SDFT FULL-FT (student+teacher resident ~28GB + grads/opt/KV): does
-#     NOT fit; it's intentionally NOT in this script. Route that to a bigger
-#     card or do CPU-offload of the teacher.
+#     NOT fit; intentionally NOT in this script.
+#
+# Phases (LoRA-focused after Simon's scope change; eval phases retained as
+# the practical-work artifact + eval-chain validation):
+#   evals  — calibration, 7B ceiling, 3B grid (eval-only, validates pipeline)
+#   train  — LoRA training matrix (the thesis core)
+#
+# Training matrix per size:
+#   classic_sft     classic offline SFT-LoRA, no teacher, no rollouts (CE on
+#                   golden_response). The canonical SFT baseline.
+#   sdft            SDFT-LoRA with frozen-base teacher (A.3 underperforming
+#                   arm — lower-bound for SDFT under LoRA).
+#   sdft_ema        SDFT-LoRA with adapter-EMA teacher (A.3 recommended arm,
+#                   paper-faithful). The teacher gets its own LoRA, EMA-mixed
+#                   from the student's LoRA each step.
+#   online_sft      "online SFT" — teacher rolls out completions (requires
+#                   vLLM). On-policy-isolation ablation, not the SFT baseline.
+#
+# Comparisons:
+#   within-size:  classic_sft vs sdft vs sdft_ema  → SDFT-vs-SFT thesis claim
+#   across-size:  3B vs 7B per arm                 → does the gap scale?
+#   teacher arm:  sdft vs sdft_ema                 → settles the A.3 confound
 #
 # Usage:
 #   ./run_cluster.sh setup        # one-time: create venv + install deps
 #   ./run_cluster.sh phase1       # calibration: eval 3 known 7B checkpoints
 #   ./run_cluster.sh phase2       # 7B ceiling: base + teacher_ceiling
 #   ./run_cluster.sh phase3       # 3B 4-cell grid re-run on CUDA
-#   ./run_cluster.sh phase4       # 3B LoRA pair: SDFT-LoRA + SFT-LoRA + evals
-#   ./run_cluster.sh phase5       # 7B LoRA pair: SDFT-LoRA + SFT-LoRA + evals
+#   ./run_cluster.sh phase4       # 3B LoRA matrix (4 arms) + evals
+#   ./run_cluster.sh phase5       # 7B LoRA matrix (3 arms; no online_sft) + evals
 #   ./run_cluster.sh phase6       # post-hoc strict scorer audit
 #   ./run_cluster.sh phase7       # summary table across all eval_results.json
-#   ./run_cluster.sh evals        # phase1 + phase2 + phase3
-#   ./run_cluster.sh training     # phase4 + phase5
+#   ./run_cluster.sh evals        # phase1 + phase2 + phase3 + phase6 + phase7
+#   ./run_cluster.sh training     # phase4 + phase5 + phase6 + phase7
 #   ./run_cluster.sh all          # setup -> phase7
 #
-# Per-phase logs land in logs/cluster_<YYYYMMDD>/<phase>.log; wall times are
-# appended to logs/cluster_<YYYYMMDD>/wall_times.csv.
+# Per-phase logs land in logs/cluster_<YYYYMMDD>/<phase>.log; wall times in
+# logs/cluster_<YYYYMMDD>/wall_times.csv. Both should be copied off the pod
+# to NFS for reproducibility.
 # ============================================================================
 
 set -euo pipefail
@@ -65,13 +90,20 @@ GRAD_ACCUM="${GRAD_ACCUM:-32}"   # matches Khamis et al. 7B-FT reproduction's ef
 REPORT_TO="${REPORT_TO:-wandb}"
 WANDB_PROJECT="${WANDB_PROJECT:-sdft-replication}"
 
-# vLLM memory utilization. Default 0.5 sized for shared 40 GB A100 with the
-# ~15 GB orphan we're contending with: 0.5 * 40 = 20 GB for vLLM, fits inside
-# the ~24 GB free, leaves room for KV cache on short prompts.
-# - Eval (phase1/2/3): pure vLLM, 0.5 is safe.
-# - Training (phase4): colocated with HF student+teacher; main.py's paper
-#   default is 0.3 for that mode — override per-phase if you split the run.
-VLLM_MEM="${VLLM_MEM:-0.5}"
+# vLLM memory utilization — SPLIT between eval (pure vLLM) and training
+# (colocated with HF student+teacher resident).
+#   VLLM_MEM_EVAL  = 0.5  → ~20 GB on A100; safe for 7B vLLM-only.
+#   VLLM_MEM_TRAIN = 0.3  → paper-default (main.py); leaves headroom for
+#                            colocated student+teacher in HF.
+# The old single $VLLM_MEM alias still works for back-compat; if set, it
+# overrides both. Otherwise the two split values apply per phase.
+VLLM_MEM_EVAL="${VLLM_MEM_EVAL:-0.5}"
+VLLM_MEM_TRAIN="${VLLM_MEM_TRAIN:-0.3}"
+VLLM_MEM="${VLLM_MEM:-}"   # back-compat — if set, used for BOTH
+if [[ -n "$VLLM_MEM" ]]; then
+    VLLM_MEM_EVAL="$VLLM_MEM"
+    VLLM_MEM_TRAIN="$VLLM_MEM"
+fi
 VLLM_MODE="${VLLM_MODE:-colocate}"
 
 # ----------------------------------------------------------------------------
@@ -181,7 +213,7 @@ phase1_calibration() {
             "$PYTHON" eval_tooluse.py \
                 --model_path "$model" \
                 --engine vllm \
-                --gpu_memory_utilization "$VLLM_MEM" \
+                --gpu_memory_utilization "$VLLM_MEM_EVAL" \
                 --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
                 --temperature "$EVAL_TEMP" \
                 --output_dir "$outdir"
@@ -199,7 +231,7 @@ phase2_7b_ceiling() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-7b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
             --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-7b-instruct-cuda
@@ -208,7 +240,7 @@ phase2_7b_ceiling() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-7b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" \
             --temperature "$EVAL_TEMP" \
@@ -226,7 +258,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-cuda
 
@@ -234,7 +266,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-teacher-ceiling-cuda
@@ -243,7 +275,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --eval_data data/tooluse_data/train_subset_holdout \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir baselines/qwen2.5-3b-instruct-holdout-base-cuda
@@ -252,7 +284,7 @@ phase3_3b_grid() {
         "$PYTHON" eval_tooluse.py \
             --model_path qwen2.5-3b \
             --engine vllm \
-            --gpu_memory_utilization "$VLLM_MEM" \
+            --gpu_memory_utilization "$VLLM_MEM_EVAL" \
             --eval_data data/tooluse_data/train_subset_holdout \
             --teacher_ceiling \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
@@ -260,49 +292,91 @@ phase3_3b_grid() {
 }
 
 # ----------------------------------------------------------------------------
-# Phase 4 — 3B LoRA pair: SDFT-LoRA + SFT-LoRA + tool-use eval + forgetting
+# Phase 4 / 5 — LoRA training matrix (4 arms × 2 sizes)
 # ----------------------------------------------------------------------------
-# 3B leaves enough headroom to run vLLM rollouts during training.
+# Arms: classic_sft | sdft | sdft_ema | online_sft
+# - classic_sft : train_sft_lora.py (TRL SFTTrainer, CE on golden_response).
+#                 No teacher, no vLLM. Fits 3B AND 7B comfortably.
+# - sdft        : train_sdft_lora.py with frozen-base teacher (A.3 worse arm).
+# - sdft_ema    : train_sdft_lora.py + --teacher_adapter_ema. Paper-faithful
+#                 EMA-of-student teacher recovered under LoRA. Two LoRA wraps
+#                 (student + teacher) but both small; fits 3B and 7B.
+# - online_sft  : train_sdft_lora.py + --generate_from_teacher. On-policy SFT
+#                 isolation ablation. Requires vLLM → skipped at 7B (vLLM
+#                 student copy + resident student+teacher overflow 40 GB).
+
+_model_id() {
+    case "$1" in
+        qwen2.5-3b) echo "Qwen/Qwen2.5-3B-Instruct" ;;
+        qwen2.5-7b) echo "Qwen/Qwen2.5-7B-Instruct" ;;
+        *) echo "unknown model short: $1" >&2; return 1 ;;
+    esac
+}
+
+# Classic offline SFT-LoRA — separate trainer, no teacher, no rollouts.
+_train_classic_sft() {
+    local model_short="$1"
+    local outdir="$2"
+
+    run_step "train.classic_sft_lora_${model_short}" "phase_train/classic_sft_lora_${model_short}.log" \
+        "$PYTHON" train_sft_lora.py \
+            --model_name "$(_model_id "$model_short")" \
+            --output_dir "$outdir" \
+            --learning_rate "$LORA_LR" \
+            --lora_r "$LORA_R" \
+            --lora_alpha "$LORA_ALPHA" \
+            --num_train_epochs "$NUM_TRAIN_EPOCHS" \
+            --per_device_train_batch_size 1 \
+            --gradient_accumulation_steps "$GRAD_ACCUM" \
+            --max_prompt_length 1024 \
+            --max_completion_length 1024 \
+            --bf16 \
+            --report_to "$REPORT_TO" \
+            --wandb_project "$WANDB_PROJECT" \
+            --run_name "classic_sft_lora_${model_short}_${RUN_TAG}"
+}
+
+# SDFT-LoRA variants — all share train_sdft_lora.py with mode-specific flags.
 _train_lora() {
-    local mode="$1"           # sdft | sft
+    local mode="$1"           # sdft | sdft_ema | online_sft
     local model_short="$2"    # qwen2.5-3b | qwen2.5-7b
     local outdir="$3"
     local extra_flags=()
 
     case "$mode" in
-        sft)
-            # SFT-LoRA = teacher rolls out (requires --use_vllm).
+        sdft)
+            ;;
+        sdft_ema)
+            extra_flags+=(--teacher_adapter_ema)
+            ;;
+        online_sft)
+            # Teacher rolls out → online SFT (NOT the classic SFT baseline).
             extra_flags+=(--generate_from_teacher)
             ;;
-        sdft) ;;
         *) echo "unknown train mode: $mode" >&2; exit 1 ;;
     esac
 
-    # vLLM rollouts: ON for 3B (fits), OFF for 7B (student+teacher resident
-    # already eats ~28GB, an extra vLLM copy of student pushes us over the
-    # ~33GB shared-GPU budget).
+    # vLLM rollouts: ON for 3B always; for 7B only when memory clearly fits
+    # (sdft & sdft_ema can fit if VLLM_MEM_TRAIN is conservative; online_sft
+    # at 7B requires vLLM but doesn't fit and is gated upstream).
     case "$model_short" in
         qwen2.5-3b)
             extra_flags+=(--use_vllm
                           --vllm_mode "$VLLM_MODE"
-                          --vllm_gpu_memory_utilization "$VLLM_MEM"
+                          --vllm_gpu_memory_utilization "$VLLM_MEM_TRAIN"
                           --vllm_enable_sleep_mode
                           --vllm_importance_sampling_correction)
             ;;
         qwen2.5-7b)
-            # NO vLLM. SFT-LoRA without vLLM is impossible (generate_from_teacher
-            # would silently use the student). Skip the SFT-LoRA 7B pair member
-            # in that case — caller handles this.
+            # 7B without vLLM. HF generate path; works for sdft / sdft_ema
+            # (student samples). online_sft at 7B is gated by caller.
             :
             ;;
     esac
 
     run_step "train.${mode}_lora_${model_short}" "phase_train/${mode}_lora_${model_short}.log" \
         "$PYTHON" train_sdft_lora.py \
-            --model_name "$(case "$model_short" in
-                qwen2.5-3b) echo "Qwen/Qwen2.5-3B-Instruct" ;;
-                qwen2.5-7b) echo "Qwen/Qwen2.5-7B-Instruct" ;;
-            esac)" \
+            --model_name "$(_model_id "$model_short")" \
             --output_dir "$outdir" \
             --learning_rate "$LORA_LR" \
             --lora_r "$LORA_R" \
@@ -355,38 +429,56 @@ _eval_lora_adapter() {
         "$VENV_DIR/bin/lm_eval" \
             --model hf \
             --model_args "pretrained=${base_id},peft=${adapter_dir},dtype=bfloat16" \
-            --tasks hellaswag,mmlu,truthfulqa,winogrande,humaneval,ifeval \
+            --tasks hellaswag,mmlu,truthfulqa_mc2,winogrande,humaneval,ifeval \
             --batch_size 8 \
             --output_path "baselines/${out_prefix}_forgetting" \
             --confirm_run_unsafe_code
 }
 
 phase4_3b_lora() {
-    log_phase "Phase 4 — 3B LoRA pair (SDFT + SFT) + evals"
+    log_phase "Phase 4 — 3B LoRA matrix (classic_sft, sdft, sdft_ema, online_sft) + evals"
     require_venv
 
+    # 1) Classic offline SFT-LoRA — the canonical SFT baseline.
+    _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
+    _eval_lora_adapter qwen2.5-3b runs/classic_sft_lora_3b/lora_adapter classic_sft_lora_3b
+
+    # 2) SDFT-LoRA, frozen-base teacher (A.3 worse arm).
     _train_lora sdft qwen2.5-3b runs/sdft_lora_3b
     _eval_lora_adapter qwen2.5-3b runs/sdft_lora_3b/lora_adapter sdft_lora_3b
 
-    _train_lora sft qwen2.5-3b runs/sft_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/sft_lora_3b/lora_adapter sft_lora_3b
+    # 3) SDFT-LoRA, adapter-EMA teacher (A.3 recommended arm; paper-faithful).
+    _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
+    _eval_lora_adapter qwen2.5-3b runs/sdft_ema_lora_3b/lora_adapter sdft_ema_lora_3b
+
+    # 4) Online SFT — on-policy-isolation ablation, not the SFT baseline.
+    _train_lora online_sft qwen2.5-3b runs/online_sft_lora_3b
+    _eval_lora_adapter qwen2.5-3b runs/online_sft_lora_3b/lora_adapter online_sft_lora_3b
 }
 
 phase5_7b_lora() {
-    log_phase "Phase 5 — 7B LoRA pair (SDFT + SFT) + evals"
+    log_phase "Phase 5 — 7B LoRA matrix (classic_sft, sdft, sdft_ema) + evals"
     require_venv
 
-    # SDFT-LoRA on 7B without vLLM: HF generate path on student. Slower than
-    # vLLM but fits the shared-GPU budget.
+    # 1) Classic offline SFT-LoRA — fits trivially at 7B (no teacher, no vLLM).
+    _train_classic_sft qwen2.5-7b runs/classic_sft_lora_7b
+    _eval_lora_adapter qwen2.5-7b runs/classic_sft_lora_7b/lora_adapter classic_sft_lora_7b
+
+    # 2) SDFT-LoRA at 7B (HF generate; no vLLM). Student samples on-policy.
     _train_lora sdft qwen2.5-7b runs/sdft_lora_7b
     _eval_lora_adapter qwen2.5-7b runs/sdft_lora_7b/lora_adapter sdft_lora_7b
 
-    # SFT-LoRA on 7B requires vLLM (HF generate ignores generate_from_teacher).
-    # On a shared 40GB A100 the vLLM-copy + student/teacher resident does not
-    # fit. Skip with a notice and surface this as a routing decision for Simon.
-    echo "[notice] Skipping SFT-LoRA 7B: requires --use_vllm which doesn't fit on 33GB shared."
-    echo "[notice] Options: (a) merge-adapter-eval-only on a bigger card, (b) drop SFT-LoRA"
-    echo "[notice]          7B from the pair and frame as future work, (c) ask for an 80GB node."
+    # 3) SDFT-LoRA at 7B with adapter-EMA teacher. Two LoRA wraps (still small);
+    #    student + teacher base both resident.
+    _train_lora sdft_ema qwen2.5-7b runs/sdft_ema_lora_7b
+    _eval_lora_adapter qwen2.5-7b runs/sdft_ema_lora_7b/lora_adapter sdft_ema_lora_7b
+
+    # online_sft at 7B requires vLLM (HF generate ignores generate_from_teacher),
+    # and vLLM-student-copy + student/teacher resident overflows 40 GB. The
+    # classic_sft arm at 7B subsumes the SFT-baseline role, so this gap doesn't
+    # leave the scaling claim empty.
+    echo "[notice] Skipping online_sft 7B: requires vLLM colocate that overflows 40GB."
+    echo "[notice] classic_sft_7b is the load-bearing SFT baseline at 7B."
 }
 
 # ----------------------------------------------------------------------------
@@ -486,9 +578,12 @@ Commands:
   phase1    calibration: eval 3 known 7B checkpoints (expect ~70/~70/~42.2).
   phase2    7B base + teacher_ceiling on eval_data (the scale point).
   phase3    re-run the 3B 4-cell grid on CUDA.
-  phase4    3B LoRA pair: SDFT-LoRA + SFT-LoRA + tool-use eval + forgetting.
-  phase5    7B LoRA pair: SDFT-LoRA (HF-generate) + skipped SFT-LoRA-7B
-            (vLLM required, doesn't fit shared 33GB).
+  phase4    3B LoRA matrix (4 arms):
+              classic_sft / sdft / sdft_ema / online_sft
+            + tool-use eval (eval_data + holdout) + forgetting suite per arm.
+  phase5    7B LoRA matrix (3 arms; online_sft skipped at 7B):
+              classic_sft / sdft / sdft_ema
+            + same eval shape.
   phase6    strict-scorer audit pass over all new eval_responses.json.
   phase7    summary table across baselines/*/eval_results.json.
 
@@ -509,7 +604,9 @@ Env overrides (prefix the command):
   LORA_LR=<f>              default 1e-4
   NUM_TRAIN_EPOCHS=<f>     default 2.0
   GRAD_ACCUM=<n>           default 32 (Khamis et al. effective batch; paper sweep {16,32,64})
-  VLLM_MEM=<f>             default 0.5 (eval-safe; drop to 0.3 for training)
+  VLLM_MEM_EVAL=<f>        default 0.5 (pure-vLLM evals in phase 1/2/3)
+  VLLM_MEM_TRAIN=<f>       default 0.3 (colocated with student+teacher in phase 4)
+  VLLM_MEM=<f>             back-compat alias — if set, overrides BOTH above
   VLLM_MODE=<colocate|server>  default colocate
   REPORT_TO=<wandb|tensorboard|none>  default wandb (training metrics)
   WANDB_PROJECT=<str>      default sdft-replication

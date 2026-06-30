@@ -58,6 +58,10 @@ def parse_args():
                    choices=["none", "wandb", "tensorboard"])
     p.add_argument("--run_name", type=str, default=None)
     p.add_argument("--wandb_project", type=str, default="sdft-replication")
+    # Checkpointing / resume — same surface as train_sdft_lora.py.
+    p.add_argument("--save_steps", type=int, default=1_000_000)
+    p.add_argument("--save_total_limit", type=int, default=3)
+    p.add_argument("--resume_from_checkpoint", type=str, default=None)
     return p.parse_args()
 
 
@@ -176,7 +180,9 @@ def main():
         lr_scheduler_type="cosine",
         max_grad_norm=1.0,
         logging_steps=1,
-        save_steps=1_000_000,           # adapter saved manually at the end
+        save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        save_strategy="steps" if args.save_steps < 1_000_000 else "no",
         report_to=args.report_to,
         run_name=args.run_name or os.path.basename(args.output_dir.rstrip("/")),
         bf16=args.bf16,
@@ -200,7 +206,18 @@ def main():
         processing_class=tokenizer,
     )
 
-    trainer.train()
+    resume_arg = None
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint == "auto":
+            ckpts = sorted(Path(args.output_dir).glob("checkpoint-*"),
+                           key=lambda p: int(p.name.split("-")[-1]) if p.name.split("-")[-1].isdigit() else -1)
+            if ckpts:
+                resume_arg = str(ckpts[-1])
+                print(f"[resume] auto-detected latest checkpoint: {resume_arg}")
+        else:
+            resume_arg = args.resume_from_checkpoint
+            print(f"[resume] using checkpoint: {resume_arg}")
+    trainer.train(resume_from_checkpoint=resume_arg)
 
     if trainer.accelerator.is_main_process:
         adapter_dir = os.path.join(args.output_dir, "lora_adapter")

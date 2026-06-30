@@ -210,6 +210,16 @@ def parse_args():
                         help="Run name for wandb/tensorboard. Defaults to output_dir basename.")
     parser.add_argument("--wandb_project", type=str, default="sdft-replication",
                         help="W&B project name. Sets WANDB_PROJECT before Trainer init.")
+    # ---- Checkpointing / resume (so a 5-8h 7B kill doesn't lose the whole arm) ----
+    parser.add_argument("--save_steps", type=int, default=1_000_000,
+                        help="HF Trainer checkpoint interval. Default effectively disabled (matches "
+                             "MPS-era behavior). On cluster pass e.g. 50 so a mid-arm kill leaves a "
+                             "resumable checkpoint at <output_dir>/checkpoint-<N>.")
+    parser.add_argument("--save_total_limit", type=int, default=3,
+                        help="Keep at most N most-recent checkpoints (older ones are GC'd by Trainer).")
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None,
+                        help="Path to a checkpoint dir or 'auto' to pick the latest under --output_dir. "
+                             "When set, trainer.train() resumes from there instead of starting fresh.")
     return parser.parse_args()
 
 
@@ -377,7 +387,9 @@ def build_distil_config(args) -> DistilConfig:
         max_grad_norm=1,
         # Logging / checkpointing.
         logging_steps=1,
-        save_steps=1_000_000,  # effectively disabled; we save the adapter manually.
+        save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        save_strategy="steps" if args.save_steps < 1_000_000 else "no",
         report_to=args.report_to,
         run_name=args.run_name or os.path.basename(args.output_dir.rstrip("/")),
         log_completions=False,
@@ -496,8 +508,22 @@ def main():
         "ref_model is the same object as the student's base model — teacher routing collapsed"
     )
 
-    # 7) Train.
-    trainer.train()
+    # 7) Train (with optional resume from a prior checkpoint).
+    resume_arg = None
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint == "auto":
+            # Pick the largest checkpoint-* dir under output_dir, if any.
+            ckpts = sorted(Path(args.output_dir).glob("checkpoint-*"),
+                           key=lambda p: int(p.name.split("-")[-1]) if p.name.split("-")[-1].isdigit() else -1)
+            if ckpts:
+                resume_arg = str(ckpts[-1])
+                print(f"[resume] auto-detected latest checkpoint: {resume_arg}")
+            else:
+                print(f"[resume] --resume_from_checkpoint=auto: no checkpoint-* found in {args.output_dir}; fresh start.")
+        else:
+            resume_arg = args.resume_from_checkpoint
+            print(f"[resume] using checkpoint: {resume_arg}")
+    trainer.train(resume_from_checkpoint=resume_arg)
 
     # 8) Save LoRA adapter (rank-0 only under DDP, defensive on single-process too).
     if trainer.accelerator.is_main_process:

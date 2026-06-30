@@ -86,6 +86,40 @@ LORA_LR="${LORA_LR:-1e-4}"
 NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
 GRAD_ACCUM="${GRAD_ACCUM:-32}"   # matches Khamis et al. 7B-FT reproduction's effective batch 32 (paper sweep was {16,32,64})
 
+# Intermediate checkpointing — so a mid-arm kill (especially in the 5-8h 7B
+# arms under HF generate) only loses up to SAVE_STEPS worth of work, not the
+# whole run. Resume manually via:
+#   ./run_cluster.sh — won't auto-resume; instead invoke the trainer directly:
+#   .venv/bin/python train_sdft_lora.py --resume_from_checkpoint auto ... (same flags as the original)
+SAVE_STEPS="${SAVE_STEPS:-50}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"
+
+# EMA mixup rate for adapter-EMA teacher (sdft_ema arm only).
+# Mixing rule: teacher = (1-α)·teacher + α·student. α is the teacher's
+# tracking SPEED. Paper used 0.01 for full-FT EMA; under LoRA the dynamics
+# differ (A/B scale, B=0 init, effective delta depends on rank+lora_alpha)
+# so 0.01 is a starting guess, NOT a known-good.
+#
+# Reading the kl_approx curve vs the FROZEN arm — be careful: in the
+# frozen arm the teacher is a stationary target, so kl_approx is
+# student-moves-toward-fixed-point. In the EMA arm the teacher chases
+# the student, so the same kl_approx value reflects a gap closing from
+# BOTH sides. EMA's curve may sit at a LOWER absolute level (e.g.
+# 0.05-0.15 vs frozen's 0.1-0.3) while being equally healthy. Compare
+# SHAPE (slow drift, non-collapsing, non-exploding), not absolute band.
+# A lower-but-stable EMA curve is NOT a failure signal.
+#
+# Failure → fix mapping (DON'T invert these):
+#   kl_approx collapses to ~0 in <50 steps   →  α TOO HIGH (teacher catches
+#                                                student before signal
+#                                                accumulates).  LOWER α:
+#       EMA_ALPHA=0.001 RUN_TAG=ema_a001 ./run_cluster.sh canary
+#   entropy explodes (>~2.5 nats early)      →  α TOO LOW (teacher lags,
+#                                                student drifts).  RAISE α:
+#       EMA_ALPHA=0.05  RUN_TAG=ema_a05  ./run_cluster.sh canary
+#       EMA_ALPHA=0.1   RUN_TAG=ema_a10  ./run_cluster.sh canary
+EMA_ALPHA="${EMA_ALPHA:-0.01}"
+
 # Metric tracking — default to wandb. Set REPORT_TO=none to skip.
 REPORT_TO="${REPORT_TO:-wandb}"
 WANDB_PROJECT="${WANDB_PROJECT:-sdft-replication}"
@@ -331,6 +365,8 @@ _train_classic_sft() {
             --max_prompt_length 1024 \
             --max_completion_length 1024 \
             --bf16 \
+            --save_steps "$SAVE_STEPS" \
+            --save_total_limit "$SAVE_TOTAL_LIMIT" \
             --report_to "$REPORT_TO" \
             --wandb_project "$WANDB_PROJECT" \
             --run_name "classic_sft_lora_${model_short}_${RUN_TAG}"
@@ -347,7 +383,7 @@ _train_lora() {
         sdft)
             ;;
         sdft_ema)
-            extra_flags+=(--teacher_adapter_ema)
+            extra_flags+=(--teacher_adapter_ema --ema_alpha "$EMA_ALPHA")
             ;;
         online_sft)
             # Teacher rolls out → online SFT (NOT the classic SFT baseline).
@@ -388,6 +424,8 @@ _train_lora() {
             --max_completion_length 1024 \
             --bf16 \
             --enable_input_require_grads \
+            --save_steps "$SAVE_STEPS" \
+            --save_total_limit "$SAVE_TOTAL_LIMIT" \
             --report_to "$REPORT_TO" \
             --wandb_project "$WANDB_PROJECT" \
             --run_name "${mode}_lora_${model_short}_${RUN_TAG}" \
@@ -436,47 +474,95 @@ _eval_lora_adapter() {
 }
 
 phase4_3b_lora() {
-    log_phase "Phase 4 — 3B LoRA matrix (classic_sft, sdft, sdft_ema, online_sft) + evals"
+    log_phase "Phase 4 — 3B LoRA matrix (classic_sft, sdft_ema, sdft, online_sft) + evals"
     require_venv
 
-    # 1) Classic offline SFT-LoRA — the canonical SFT baseline.
+    # CANARY-LED ORDER. classic_sft is the fastest path AND validates the
+    # data pipeline + TRL assistant_only_loss feature. sdft_ema is second
+    # because it validates the LoRAEMACallback (asserts on step 1 if LoRA
+    # pairing is wrong). sdft (frozen) is known-good from earlier smoke.
+    # online_sft is last because it's the most expensive and least critical.
+
+    # 1) CANARY 1: classic offline SFT-LoRA — data path + TRL feature.
     _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
     _eval_lora_adapter qwen2.5-3b runs/classic_sft_lora_3b/lora_adapter classic_sft_lora_3b
 
-    # 2) SDFT-LoRA, frozen-base teacher (A.3 worse arm).
-    _train_lora sdft qwen2.5-3b runs/sdft_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/sdft_lora_3b/lora_adapter sdft_lora_3b
-
-    # 3) SDFT-LoRA, adapter-EMA teacher (A.3 recommended arm; paper-faithful).
+    # 2) CANARY 2: SDFT-LoRA with adapter-EMA teacher — validates EMA callback.
     _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
     _eval_lora_adapter qwen2.5-3b runs/sdft_ema_lora_3b/lora_adapter sdft_ema_lora_3b
+
+    # 3) SDFT-LoRA, frozen-base teacher (A.3 worse arm; safety net).
+    _train_lora sdft qwen2.5-3b runs/sdft_lora_3b
+    _eval_lora_adapter qwen2.5-3b runs/sdft_lora_3b/lora_adapter sdft_lora_3b
 
     # 4) Online SFT — on-policy-isolation ablation, not the SFT baseline.
     _train_lora online_sft qwen2.5-3b runs/online_sft_lora_3b
     _eval_lora_adapter qwen2.5-3b runs/online_sft_lora_3b/lora_adapter online_sft_lora_3b
 }
 
-phase5_7b_lora() {
-    log_phase "Phase 5 — 7B LoRA matrix (classic_sft, sdft, sdft_ema) + evals"
+# Run JUST the two canary trainings — no evals, no other arms. Use this to
+# validate the matrix before committing the 16h+ full phase4.
+phase4_canary() {
+    log_phase "Phase 4 — CANARY (classic_sft + sdft_ema 3B training only, no evals)"
     require_venv
 
-    # 1) Classic offline SFT-LoRA — fits trivially at 7B (no teacher, no vLLM).
+    echo "[canary] sdft_ema arm will use EMA_ALPHA=$EMA_ALPHA"
+    echo "[canary] Mixing rule: teacher = (1-α)·teacher + α·student"
+    echo "[canary]   kl_approx collapses → α TOO HIGH → LOWER:  EMA_ALPHA=0.001"
+    echo "[canary]   entropy explodes    → α TOO LOW  → RAISE: EMA_ALPHA=0.05 or 0.1"
+    echo
+
+    _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
+    _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
+
+    echo
+    echo "[canary] Both training canaries finished. If wandb shows healthy"
+    echo "[canary]   curves for both runs, launch the full phase4."
+    echo "[canary] Quick checks:"
+    echo "[canary]   - [ema] line on canary 2: 'matched N LoRA parameter pairs' —"
+    echo "[canary]     expected N = 7 target_modules × 2 (A+B) × num_layers."
+    echo "[canary]     Qwen2.5-3B has 36 layers → N=504. Glance to confirm; a low"
+    echo "[canary]     N would mean teacher LoRA isn't fully shadowing student."
+    echo "[canary]   - classic_sft loss curve: should decrease from ~1-2 toward <0.5 by epoch 1"
+    echo "[canary]   - sdft_ema kl_approx: compare SHAPE not LEVEL to sdft frozen."
+    echo "[canary]     EMA arm may sit lower (e.g. 0.05-0.15 vs frozen's 0.1-0.3) and"
+    echo "[canary]     still be healthy — the teacher chases the student, so the gap"
+    echo "[canary]     closes from both sides. Failure is collapse-to-zero or NaN."
+    echo "[canary]     Collapse-to-~0 in <50 steps => α too high. LOWER α:"
+    echo "[canary]     EMA_ALPHA=0.001 RUN_TAG=ema_a001 ./run_cluster.sh canary"
+    echo "[canary]   - sdft_ema entropy: should hover similarly to sdft — NOT exploding above"
+    echo "[canary]     ~2.5 nats early (=> α too low). If it does, RAISE α:"
+    echo "[canary]     EMA_ALPHA=0.05 RUN_TAG=ema_a05 ./run_cluster.sh canary"
+    echo "[canary]   - both adapters saved at runs/<name>/lora_adapter/"
+    echo "[canary]   - intermediate checkpoints at runs/<name>/checkpoint-{50,100,...}/"
+}
+
+phase5_7b_lora() {
+    log_phase "Phase 5 — 7B LoRA matrix (classic_sft, sdft_ema, sdft) + evals"
+    require_venv
+
+    # Same canary-led order as phase4. classic_sft is fastest, sdft_ema
+    # validates the EMA callback at 7B (different LoRA shapes, worth its
+    # own canary), sdft is the safety net. 7B SDFT arms use HF generate
+    # (no vLLM) so each is 5-8h — wandb + SAVE_STEPS=50 mean a kill at
+    # hour 6 only loses <2h of work, not the whole arm.
+
+    # 1) CANARY 1: classic offline SFT-LoRA — fits trivially at 7B.
     _train_classic_sft qwen2.5-7b runs/classic_sft_lora_7b
     _eval_lora_adapter qwen2.5-7b runs/classic_sft_lora_7b/lora_adapter classic_sft_lora_7b
 
-    # 2) SDFT-LoRA at 7B (HF generate; no vLLM). Student samples on-policy.
-    _train_lora sdft qwen2.5-7b runs/sdft_lora_7b
-    _eval_lora_adapter qwen2.5-7b runs/sdft_lora_7b/lora_adapter sdft_lora_7b
-
-    # 3) SDFT-LoRA at 7B with adapter-EMA teacher. Two LoRA wraps (still small);
-    #    student + teacher base both resident.
+    # 2) CANARY 2: SDFT-LoRA at 7B with adapter-EMA teacher.
     _train_lora sdft_ema qwen2.5-7b runs/sdft_ema_lora_7b
     _eval_lora_adapter qwen2.5-7b runs/sdft_ema_lora_7b/lora_adapter sdft_ema_lora_7b
 
+    # 3) SDFT-LoRA at 7B, frozen-base teacher (safety net).
+    _train_lora sdft qwen2.5-7b runs/sdft_lora_7b
+    _eval_lora_adapter qwen2.5-7b runs/sdft_lora_7b/lora_adapter sdft_lora_7b
+
     # online_sft at 7B requires vLLM (HF generate ignores generate_from_teacher),
     # and vLLM-student-copy + student/teacher resident overflows 40 GB. The
-    # classic_sft arm at 7B subsumes the SFT-baseline role, so this gap doesn't
-    # leave the scaling claim empty.
+    # classic_sft arm at 7B is the SFT baseline; the gap doesn't leave the
+    # scaling claim empty.
     echo "[notice] Skipping online_sft 7B: requires vLLM colocate that overflows 40GB."
     echo "[notice] classic_sft_7b is the load-bearing SFT baseline at 7B."
 }
@@ -552,6 +638,11 @@ case "${1:-help}" in
     phase5)    phase5_7b_lora ;;
     phase6)    phase6_scorer_audit ;;
     phase7)    phase7_summary ;;
+    canary)    phase4_canary ;;
+    verify_targets)
+        require_venv
+        "$PYTHON" verify_training_targets.py --row 0 --n 1
+        ;;
     evals)     phase1_calibration; phase2_7b_ceiling; phase3_3b_grid; phase6_scorer_audit; phase7_summary ;;
     training)  phase4_3b_lora; phase5_7b_lora; phase6_scorer_audit; phase7_summary ;;
     all)
@@ -587,6 +678,13 @@ Commands:
   phase6    strict-scorer audit pass over all new eval_responses.json.
   phase7    summary table across baselines/*/eval_results.json.
 
+  canary          run JUST classic_sft_3b + sdft_ema_3b TRAINING (no evals)
+                  Use this as a fail-fast check before committing 16h+ of
+                  phase4. Catches: data-pipeline bugs, TRL feature mismatches,
+                  LoRAEMACallback pairing failures — all at step 1.
+  verify_targets  print one row through classic-SFT and SDFT pipelines side
+                  by side to confirm both consume full golden_response.
+
   evals     phase1 + phase2 + phase3 + phase6 + phase7  (eval-only pipeline)
   training  phase4 + phase5 + phase6 + phase7           (training-only)
   all       setup -> phase1 -> ... -> phase7
@@ -604,6 +702,9 @@ Env overrides (prefix the command):
   LORA_LR=<f>              default 1e-4
   NUM_TRAIN_EPOCHS=<f>     default 2.0
   GRAD_ACCUM=<n>           default 32 (Khamis et al. effective batch; paper sweep {16,32,64})
+  SAVE_STEPS=<n>           default 50 (mid-arm checkpoints; bumps survive kills)
+  SAVE_TOTAL_LIMIT=<n>     default 3 (keep last N checkpoints; older GC'd)
+  EMA_ALPHA=<f>            default 0.01 (sdft_ema teacher mixup; sweep if canary 2 misbehaves)
   VLLM_MEM_EVAL=<f>        default 0.5 (pure-vLLM evals in phase 1/2/3)
   VLLM_MEM_TRAIN=<f>       default 0.3 (colocated with student+teacher in phase 4)
   VLLM_MEM=<f>             back-compat alias — if set, overrides BOTH above

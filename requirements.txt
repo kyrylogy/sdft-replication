@@ -12,6 +12,6 @@ numpy==2.2.6
 scipy==1.15.3
 matplotlib==3.10.7
 flashinfer-python==0.5.3
-wandb==0.22.2
+wandb>=0.22.3  # 0.22.2 rejects the new 86-char API keys; see huggingface/lerobot#2762
 pandas==2.3.3
 deepspeed==0.18.4

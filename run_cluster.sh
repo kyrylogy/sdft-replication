@@ -61,6 +61,10 @@ LORA_LR="${LORA_LR:-1e-4}"
 NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
 GRAD_ACCUM="${GRAD_ACCUM:-8}"
 
+# Metric tracking — default to wandb. Set REPORT_TO=none to skip.
+REPORT_TO="${REPORT_TO:-wandb}"
+WANDB_PROJECT="${WANDB_PROJECT:-sdft-replication}"
+
 # vLLM memory utilization. Default 0.5 sized for shared 40 GB A100 with the
 # ~15 GB orphan we're contending with: 0.5 * 40 = 20 GB for vLLM, fits inside
 # the ~24 GB free, leaves room for KV cache on short prompts.
@@ -310,6 +314,9 @@ _train_lora() {
             --max_completion_length 1024 \
             --bf16 \
             --enable_input_require_grads \
+            --report_to "$REPORT_TO" \
+            --wandb_project "$WANDB_PROJECT" \
+            --run_name "${mode}_lora_${model_short}_${RUN_TAG}" \
             "${extra_flags[@]}"
 }
 
@@ -504,10 +511,14 @@ Env overrides (prefix the command):
   GRAD_ACCUM=<n>           default 8
   VLLM_MEM=<f>             default 0.5 (eval-safe; drop to 0.3 for training)
   VLLM_MODE=<colocate|server>  default colocate
+  REPORT_TO=<wandb|tensorboard|none>  default wandb (training metrics)
+  WANDB_PROJECT=<str>      default sdft-replication
+  WANDB_API_KEY=<str>      required for wandb; or run \`wandb login\` once
 
 Examples:
   VLLM_MEM=0.25 ./run_cluster.sh phase4
   RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 LORA_R=32 LORA_ALPHA=64 ./run_cluster.sh phase4
+  REPORT_TO=wandb WANDB_PROJECT=sdft-thesis ./run_cluster.sh phase4
 EOF
         ;;
     *)

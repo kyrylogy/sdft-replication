@@ -148,6 +148,16 @@ def parse_args():
     parser.add_argument("--generate_from_teacher", action="store_true",
                         help="Use teacher (not student) for rollouts -> trainer becomes ONLINE SFT. "
                              "Requires --use_vllm (HF generate path always uses student, regardless of this flag).")
+    # ---- Metric tracking ----
+    parser.add_argument("--report_to", type=str, default="none",
+                        choices=["none", "wandb", "tensorboard"],
+                        help="Where to ship training metrics. 'wandb' uses WANDB_API_KEY env var "
+                             "or ~/.netrc from `wandb login`. 'tensorboard' writes event files "
+                             "to <output_dir>/runs/.")
+    parser.add_argument("--run_name", type=str, default=None,
+                        help="Run name for wandb/tensorboard. Defaults to output_dir basename.")
+    parser.add_argument("--wandb_project", type=str, default="sdft-replication",
+                        help="W&B project name. Sets WANDB_PROJECT before Trainer init.")
     return parser.parse_args()
 
 
@@ -316,7 +326,8 @@ def build_distil_config(args) -> DistilConfig:
         # Logging / checkpointing.
         logging_steps=1,
         save_steps=1_000_000,  # effectively disabled; we save the adapter manually.
-        report_to="none",
+        report_to=args.report_to,
+        run_name=args.run_name or os.path.basename(args.output_dir.rstrip("/")),
         log_completions=False,
         # Teacher: EMA sync OFF. NOTE — this is a DEVIATION from the paper.
         # Appendix A.3 ablates teacher choices and recommends EMA-of-student
@@ -360,6 +371,14 @@ def main():
             "--generate_from_teacher requires --use_vllm; the HF generate path "
             "always samples from the student. Pass both flags for SFT-LoRA mode."
         )
+
+    # Wire wandb project / mode BEFORE the Trainer touches the WandbCallback.
+    if args.report_to == "wandb":
+        os.environ.setdefault("WANDB_PROJECT", args.wandb_project)
+        # Save full configs as wandb artifacts; quiet the launch spam.
+        os.environ.setdefault("WANDB_WATCH", "false")
+        os.environ.setdefault("WANDB_LOG_MODEL", "false")
+        print(f"[wandb] project={args.wandb_project} run_name={args.run_name or 'auto'}")
 
     # 1) Models.
     student, teacher, tokenizer = build_models(args.model_name, bf16=args.bf16)

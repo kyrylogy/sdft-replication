@@ -59,7 +59,7 @@ LORA_R="${LORA_R:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 LORA_LR="${LORA_LR:-1e-4}"
 NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
-GRAD_ACCUM="${GRAD_ACCUM:-8}"
+GRAD_ACCUM="${GRAD_ACCUM:-32}"   # matches Khamis et al. 7B-FT reproduction's effective batch 32 (paper sweep was {16,32,64})
 
 # Metric tracking — default to wandb. Set REPORT_TO=none to skip.
 REPORT_TO="${REPORT_TO:-wandb}"
@@ -508,7 +508,7 @@ Env overrides (prefix the command):
   LORA_ALPHA=<n>           default 32
   LORA_LR=<f>              default 1e-4
   NUM_TRAIN_EPOCHS=<f>     default 2.0
-  GRAD_ACCUM=<n>           default 8
+  GRAD_ACCUM=<n>           default 32 (Khamis et al. effective batch; paper sweep {16,32,64})
   VLLM_MEM=<f>             default 0.5 (eval-safe; drop to 0.3 for training)
   VLLM_MODE=<colocate|server>  default colocate
   REPORT_TO=<wandb|tensorboard|none>  default wandb (training metrics)

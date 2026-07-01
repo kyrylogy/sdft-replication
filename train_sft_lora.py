@@ -21,7 +21,7 @@ import torch
 from datasets import load_from_disk
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model, TaskType
-from trl import SFTConfig, SFTTrainer
+from trl import SFTConfig, SFTTrainer, DataCollatorForCompletionOnlyLM
 
 
 # ---------------------------------------------------------------------------
@@ -94,15 +94,18 @@ def load_and_format_dataset(tokenizer, seed: int, no_holdout_filter: bool, max_s
     raw_dataset = filter_holdout(raw_dataset, no_holdout_filter)
 
     def format_example(example):
-        # Chat-formatted full conversation; SFTTrainer + assistant_only_loss
-        # will mask the user-turn tokens out of the loss.
-        return {
-            "messages": [
+        # Pre-templatize as a single string. DataCollatorForCompletionOnlyLM
+        # later masks everything before the assistant marker so the loss
+        # is computed only on the assistant tokens (= golden_response).
+        text = tokenizer.apply_chat_template(
+            [
                 {"role": "user", "content": example["prompt"]},
                 {"role": "assistant",
                  "content": "\n".join(example["golden_response"])},
             ],
-        }
+            tokenize=False,
+        )
+        return {"text": text}
 
     formatted = raw_dataset.map(format_example, remove_columns=raw_dataset.column_names)
     formatted = formatted.shuffle(seed=seed)
@@ -194,9 +197,22 @@ def main():
         # Sequence handling.
         max_length=max_length,
         packing=False,
-        # Loss on assistant tokens only — this is the SFT crux: response-only
-        # cross-entropy, prompt tokens contribute zero to the loss.
-        assistant_only_loss=True,
+        dataset_text_field="text",
+        # NOTE: NOT using assistant_only_loss=True — that requires the
+        # tokenizer's chat template to contain {% generation %} markers,
+        # which Qwen2.5's default template doesn't. Response-only loss is
+        # handled by DataCollatorForCompletionOnlyLM below instead.
+    )
+
+    # Response-only loss masking via the canonical TRL collator. Uses token
+    # IDs (not the raw string) so it matches deterministically regardless of
+    # tokenization edge cases at the boundary.
+    response_template_ids = tokenizer.encode(
+        "<|im_start|>assistant\n", add_special_tokens=False,
+    )
+    collator = DataCollatorForCompletionOnlyLM(
+        response_template=response_template_ids,
+        tokenizer=tokenizer,
     )
 
     trainer = SFTTrainer(
@@ -204,6 +220,7 @@ def main():
         args=cfg,
         train_dataset=dataset,
         processing_class=tokenizer,
+        data_collator=collator,
     )
 
     resume_arg = None

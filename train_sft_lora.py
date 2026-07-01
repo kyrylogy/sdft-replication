@@ -19,9 +19,46 @@ from pathlib import Path
 
 import torch
 from datasets import load_from_disk
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    DataCollatorForLanguageModeling,
+)
 from peft import LoraConfig, get_peft_model, TaskType
-from trl import SFTConfig, SFTTrainer, DataCollatorForCompletionOnlyLM
+from trl import SFTConfig, SFTTrainer
+
+
+# ---------------------------------------------------------------------------
+# Response-only masking collator (replaces trl.DataCollatorForCompletionOnlyLM,
+# removed in TRL 0.19+). Qwen2.5's chat template lacks {% generation %} tags,
+# so TRL 0.24's assistant_only_loss=True path is also unavailable — we mask
+# everything up to and including the last assistant marker per row here.
+# Verified locally: only assistant content contributes to loss; user prompt
+# and system preamble are all -100.
+# ---------------------------------------------------------------------------
+class ResponseOnlyCollator(DataCollatorForLanguageModeling):
+    def __init__(self, tokenizer, response_template: str):
+        super().__init__(tokenizer=tokenizer, mlm=False)
+        self.response_template_ids = tokenizer.encode(
+            response_template, add_special_tokens=False,
+        )
+
+    def torch_call(self, examples):
+        batch = super().torch_call(examples)
+        L = len(self.response_template_ids)
+        labels = batch["labels"]
+        for i in range(labels.size(0)):
+            ids = batch["input_ids"][i].tolist()
+            last = -1
+            for j in range(len(ids) - L + 1):
+                if ids[j:j + L] == self.response_template_ids:
+                    last = j
+            if last < 0:
+                labels[i, :] = -100
+            else:
+                labels[i, : last + L] = -100
+        batch["labels"] = labels
+        return batch
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +229,11 @@ def main():
         fp16=False,
         gradient_checkpointing=True,
         dataloader_pin_memory=False,
-        remove_unused_columns=False,
+        # True (not False as in SDFT): after SFTTrainer's internal tokenization
+        # of dataset_text_field="text", the raw string column would otherwise
+        # reach the collator and crash tensorization ("too many dimensions 'str'").
+        # SDFT keeps the prompt column for rollouts; classic SFT does not.
+        remove_unused_columns=True,
         seed=args.seed,
         # Sequence handling.
         max_length=max_length,
@@ -204,15 +245,13 @@ def main():
         # handled by DataCollatorForCompletionOnlyLM below instead.
     )
 
-    # Response-only loss masking via the canonical TRL collator. Uses token
-    # IDs (not the raw string) so it matches deterministically regardless of
-    # tokenization edge cases at the boundary.
-    response_template_ids = tokenizer.encode(
-        "<|im_start|>assistant\n", add_special_tokens=False,
-    )
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template=response_template_ids,
+    # Response-only loss masking. See ResponseOnlyCollator above for why
+    # we no longer use trl.DataCollatorForCompletionOnlyLM (removed in
+    # TRL 0.19+) or SFTConfig.assistant_only_loss (requires template tags
+    # Qwen2.5 lacks). Local smoke test verifies mask behavior.
+    collator = ResponseOnlyCollator(
         tokenizer=tokenizer,
+        response_template="<|im_start|>assistant\n",
     )
 
     trainer = SFTTrainer(

@@ -13,7 +13,8 @@ cd "$REPO_DIR"
 RUN_TAG="${RUN_TAG:-$(date +%Y%m%d)}"
 LOG_DIR="logs/cluster_${RUN_TAG}"
 WALL_TIMES_CSV="${LOG_DIR}/wall_times.csv"
-mkdir -p "$LOG_DIR"
+# LOG_DIR is created lazily by run_step (via mkdir -p on the log's parent), so
+# a bare `./run_cluster.sh help` invocation doesn't leave an empty dir behind.
 
 VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON="${VENV_DIR}/bin/python"
@@ -359,16 +360,18 @@ _train_lora() {
 _eval_lora_adapter() {
     local model_short="$1" adapter_dir="$2" out_prefix="$3"
     local base_id
-    base_id="$(case "$model_short" in
-        qwen2.5-3b) echo "Qwen/Qwen2.5-3B-Instruct" ;;
-        qwen2.5-7b) echo "Qwen/Qwen2.5-7B-Instruct" ;;
-    esac)"
+    base_id="$(_model_id "$model_short")"
 
-    # wandb wiring: --wandb + --wandb_group=<arm> for eval_tooluse.py,
-    # --wandb_args project=X,name=Y,group=Z for lm_eval. Both no-op when REPORT_TO != wandb.
-    local wb_eval=() wb_lm=()
+    # wandb wiring: eval_tooluse.py uses --wandb flags, lm_eval uses --wandb_args.
+    # Everything wandb-related is inside these guards; no-op when REPORT_TO != wandb.
+    local wb_eval_split=() wb_holdout_split=() wb_lm=()
     if [[ "$REPORT_TO" == "wandb" ]]; then
-        wb_eval=(--wandb --wandb_project "$WANDB_PROJECT" --wandb_group "$out_prefix")
+        wb_eval_split=(--wandb --wandb_project "$WANDB_PROJECT"
+                       --wandb_group "$out_prefix"
+                       --wandb_run_name "eval_${out_prefix}_eval")
+        wb_holdout_split=(--wandb --wandb_project "$WANDB_PROJECT"
+                          --wandb_group "$out_prefix"
+                          --wandb_run_name "eval_${out_prefix}_holdout")
         wb_lm=(--wandb_args "project=${WANDB_PROJECT},name=eval_${out_prefix}_forgetting,group=${out_prefix},job_type=eval")
     fi
 
@@ -380,8 +383,7 @@ _eval_lora_adapter() {
             --engine hf \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_eval" \
-            --wandb_run_name "eval_${out_prefix}_eval" \
-            "${wb_eval[@]}"
+            "${wb_eval_split[@]}"
 
     run_step "eval.${out_prefix}.holdout" "eval_lora/${out_prefix}_holdout.log" \
         "$PYTHON" eval_tooluse.py \
@@ -391,12 +393,13 @@ _eval_lora_adapter() {
             --eval_data data/tooluse_data/train_subset_holdout \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_holdout" \
-            --wandb_run_name "eval_${out_prefix}_holdout" \
-            "${wb_eval[@]}"
+            "${wb_holdout_split[@]}"
 
     # peft= loads the adapter without merging.
+    # Invoked via `python -m lm_eval` (not $VENV_DIR/bin/lm_eval) so the module
+    # import is the requirement, not the entry-point binary — more portable.
     run_step "eval.${out_prefix}.forgetting" "eval_lora/${out_prefix}_forgetting.log" \
-        "$VENV_DIR/bin/lm_eval" \
+        "$PYTHON" -m lm_eval \
             --model hf \
             --model_args "pretrained=${base_id},peft=${adapter_dir},dtype=bfloat16" \
             --tasks hellaswag,mmlu,truthfulqa_mc2,winogrande,humaneval,ifeval \
@@ -406,33 +409,45 @@ _eval_lora_adapter() {
             "${wb_lm[@]}"
 }
 
+# RUN_TAG is threaded through runs/ and baselines/ so tagged experiments are
+# fully independent. Same-day canary → phase4 reuse works because both use
+# today's default tag. Cross-day reuse: pass RUN_TAG=<canary_day> explicitly.
+_arm_dir() { echo "runs/${1}_${RUN_TAG}"; }        # $1 = arm short (classic_sft_lora_3b)
+_arm_prefix() { echo "${1}_${RUN_TAG}"; }          # used as out_prefix → baselines/<prefix>_{eval,holdout,forgetting}
+
 # Order: classic_sft → sdft_ema → sdft → online_sft. Fastest / most novel first.
 phase4_3b_lora() {
-    log_phase "Phase 4 — 3B LoRA matrix + evals"
+    log_phase "Phase 4 — 3B LoRA matrix + evals   (tag=${RUN_TAG})"
     require_venv
     FAILED_STEPS=()
 
     echo "[phase4] REUSE_ADAPTERS=$REUSE_ADAPTERS   fault-tolerant across arms"
     echo
 
-    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
-    _eval_arm_safely      "arm1.classic_sft" qwen2.5-3b runs/classic_sft_lora_3b classic_sft_lora_3b
+    local d
+    d="$(_arm_dir classic_sft_lora_3b)"
+    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-3b "$d"
+    _eval_arm_safely      "arm1.classic_sft" qwen2.5-3b "$d" "$(_arm_prefix classic_sft_lora_3b)"
 
-    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
-    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-3b runs/sdft_ema_lora_3b    sdft_ema_lora_3b
+    d="$(_arm_dir sdft_ema_lora_3b)"
+    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-3b "$d"
+    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-3b "$d" "$(_arm_prefix sdft_ema_lora_3b)"
 
-    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-3b runs/sdft_lora_3b
-    _eval_arm_safely      "arm3.sdft"        qwen2.5-3b runs/sdft_lora_3b        sdft_lora_3b
+    d="$(_arm_dir sdft_lora_3b)"
+    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-3b "$d"
+    _eval_arm_safely      "arm3.sdft"        qwen2.5-3b "$d" "$(_arm_prefix sdft_lora_3b)"
 
-    _safe_step "arm4.online_sft.train" _maybe_train_lora online_sft qwen2.5-3b runs/online_sft_lora_3b
-    _eval_arm_safely      "arm4.online_sft"  qwen2.5-3b runs/online_sft_lora_3b  online_sft_lora_3b
+    d="$(_arm_dir online_sft_lora_3b)"
+    _safe_step "arm4.online_sft.train" _maybe_train_lora online_sft qwen2.5-3b "$d"
+    _eval_arm_safely      "arm4.online_sft"  qwen2.5-3b "$d" "$(_arm_prefix online_sft_lora_3b)"
 
     _print_failed_summary "phase4"
 }
 
 # Runs only classic_sft + sdft_ema at 3B, no evals. Fail-fast for a full phase4.
+# Writes to the same tagged paths as phase4 → same-tag phase4 will reuse them.
 phase4_canary() {
-    log_phase "Phase 4 — CANARY (classic_sft + sdft_ema 3B training only)"
+    log_phase "Phase 4 — CANARY (classic_sft + sdft_ema 3B training only)   (tag=${RUN_TAG})"
     require_venv
 
     echo "[canary] EMA_ALPHA=$EMA_ALPHA   teacher = (1-α)·teacher + α·student"
@@ -440,10 +455,10 @@ phase4_canary() {
     echo "[canary]   entropy explodes    → α TOO LOW  → RAISE (EMA_ALPHA=0.05 / 0.1)"
     echo
 
-    _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
-    _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
+    _train_classic_sft qwen2.5-3b "$(_arm_dir classic_sft_lora_3b)"
+    _train_lora sdft_ema qwen2.5-3b "$(_arm_dir sdft_ema_lora_3b)"
 
-    cat <<'EOF'
+    cat <<EOF
 
 [canary] Both trainings finished. Quick checks:
   - [ema] log line 'matched N LoRA parameter pairs' — Qwen2.5-3B → N=504
@@ -451,26 +466,34 @@ phase4_canary() {
   - classic_sft loss: down from ~1-2 toward <0.5 by epoch 1.
   - sdft_ema kl_approx: compare SHAPE not LEVEL vs sdft frozen. EMA may sit
     lower (teacher chases) and still be healthy. Failure = collapse-to-0 or NaN.
-  - Adapters at runs/<name>/lora_adapter/, intermediate ckpts at checkpoint-N/.
+  - Adapters at runs/<name>_${RUN_TAG}/lora_adapter/, intermediate ckpts at checkpoint-N/.
 EOF
 }
 
+# online_sft skipped at 7B: --generate_from_teacher would require vLLM colocate
+# for reasonable teacher rollout throughput, but the 7B branch of _train_lora
+# does NOT enable vLLM (only 3B does). HF-generate teacher rollouts at 7B every
+# step are prohibitively slow. classic_sft_7b remains the SFT baseline at 7B.
 phase5_7b_lora() {
-    log_phase "Phase 5 — 7B LoRA matrix + evals (online_sft skipped: vLLM copy overflows 40GB)"
+    log_phase "Phase 5 — 7B LoRA matrix + evals (online_sft skipped)   (tag=${RUN_TAG})"
     require_venv
     FAILED_STEPS=()
 
     echo "[phase5] REUSE_ADAPTERS=$REUSE_ADAPTERS   fault-tolerant across arms"
     echo
 
-    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-7b runs/classic_sft_lora_7b
-    _eval_arm_safely      "arm1.classic_sft" qwen2.5-7b runs/classic_sft_lora_7b classic_sft_lora_7b
+    local d
+    d="$(_arm_dir classic_sft_lora_7b)"
+    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-7b "$d"
+    _eval_arm_safely      "arm1.classic_sft" qwen2.5-7b "$d" "$(_arm_prefix classic_sft_lora_7b)"
 
-    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-7b runs/sdft_ema_lora_7b
-    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-7b runs/sdft_ema_lora_7b    sdft_ema_lora_7b
+    d="$(_arm_dir sdft_ema_lora_7b)"
+    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-7b "$d"
+    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-7b "$d" "$(_arm_prefix sdft_ema_lora_7b)"
 
-    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-7b runs/sdft_lora_7b
-    _eval_arm_safely      "arm3.sdft"        qwen2.5-7b runs/sdft_lora_7b        sdft_lora_7b
+    d="$(_arm_dir sdft_lora_7b)"
+    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-7b "$d"
+    _eval_arm_safely      "arm3.sdft"        qwen2.5-7b "$d" "$(_arm_prefix sdft_lora_7b)"
 
     _print_failed_summary "phase5"
 }
@@ -509,14 +532,16 @@ if not rows:
     print("(no eval_results.json files found)")
 else:
     width = max(len(r["dir"]) for r in rows)
-    print(f"{'dir'.ljust(width)}  {'acc':>8} {'n':>5} {'tok':>5} {'ceil':>5} {'adapter':>5} {'data':>30}")
-    print("-" * (width + 70))
+    def fmt(x):
+        return "-" if x is None else str(x)
+    print(f"{'dir'.ljust(width)}  {'acc':>8} {'correct':>7} {'n':>5} {'tok':>5} {'ceil':>5} {'adapter':>5} {'data':>30}")
+    print("-" * (width + 78))
     for r in rows:
         acc = f"{r['acc']*100:6.2f}%" if r["acc"] is not None else "  n/a "
         ceil = "Y" if r["ceiling"] else "N" if r["ceiling"] is False else "-"
         adapter = "Y" if r["adapter"] else "-"
         data = (r["eval_data"] or "eval_data").rsplit("/", 1)[-1][:30]
-        print(f"{r['dir'].ljust(width)}  {acc:>8} {r['n']:>5} {r['tokens']:>5} {ceil:>5} {adapter:>5} {data:>30}")
+        print(f"{r['dir'].ljust(width)}  {acc:>8} {fmt(r['correct']):>7} {fmt(r['n']):>5} {fmt(r['tokens']):>5} {ceil:>5} {adapter:>5} {data:>30}")
 PYEOF
 
     if [[ -f "$WALL_TIMES_CSV" ]]; then
@@ -580,7 +605,10 @@ Logs:       ${LOG_DIR}/<phase>/<step>.log
 Wall times: ${WALL_TIMES_CSV}
 
 Env overrides (prefix the command):
-  RUN_TAG=<str>                default: today's YYYYMMDD
+  RUN_TAG=<str>                default: today's YYYYMMDD; scopes LOG_DIR,
+                               wandb run names, runs/<arm>_<TAG>/ output paths,
+                               AND baselines/<arm>_<TAG>_{eval,holdout,forgetting}/
+                               → tagged runs are fully independent from each other.
   VENV_DIR=<path>              default: .venv
   EVAL_MAX_NEW_TOKENS=<n>      default: 2048
   EVAL_TEMP=<f>                default: 0.0 (greedy)
@@ -603,8 +631,11 @@ Env overrides (prefix the command):
 
 Examples:
   VLLM_MEM=0.25 ./run_cluster.sh phase4
-  RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 ./run_cluster.sh phase4
-  REUSE_ADAPTERS=0 RUN_TAG=v2 ./run_cluster.sh phase4      # force retrain
+  # Independent v2 experiment with fresh hyperparams — writes to runs/<arm>_v2/
+  # and baselines/<arm>_v2_*/, so v1 is untouched:
+  RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 LORA_R=32 LORA_ALPHA=64 ./run_cluster.sh phase4
+  # Reuse a prior-day canary adapter (RUN_TAG must match the canary's tag):
+  RUN_TAG=20260701 ./run_cluster.sh phase4
 EOF
         ;;
     *)

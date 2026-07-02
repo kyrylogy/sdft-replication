@@ -101,6 +101,15 @@ def parse_args():
     parser.add_argument("--no_enforce_eager", action="store_true",
                         help="Disable vLLM's enforce_eager. Default is ON because CUDA-graph "
                              "capture trips the Python.h include path on Py 3.12 in this image.")
+    parser.add_argument("--wandb", action="store_true",
+                        help="Log eval accuracy + config to wandb as a summary run.")
+    parser.add_argument("--wandb_project", type=str, default=None,
+                        help="wandb project (falls back to $WANDB_PROJECT).")
+    parser.add_argument("--wandb_run_name", type=str, default=None,
+                        help="wandb run name (defaults to output_dir basename).")
+    parser.add_argument("--wandb_group", type=str, default=None,
+                        help="Optional wandb group tag (e.g. arm name) so all "
+                             "3 evals for one arm group in the UI.")
     return parser.parse_args()
 
 
@@ -402,6 +411,33 @@ def main():
             for i in range(len(responses))
         ], f, indent=2)
     print(f"Saved responses to {responses_path}")
+
+    if args.wandb:
+        try:
+            import wandb
+            project = args.wandb_project or os.environ.get("WANDB_PROJECT") or "sdft-replication"
+            run_name = args.wandb_run_name or os.path.basename(output_dir.rstrip("/"))
+            wandb.init(
+                project=project,
+                name=run_name,
+                group=args.wandb_group,
+                job_type="eval",
+                config=results_to_save["config"],
+                reinit=True,
+            )
+            wandb.log({
+                "eval/accuracy": accuracy,
+                "eval/num_correct": int(sum(scores)),
+                "eval/num_total": len(scores),
+            })
+            wandb.summary["accuracy"] = accuracy
+            wandb.summary["num_correct"] = int(sum(scores))
+            wandb.summary["num_total"] = len(scores)
+            wandb.summary["eval_results_json"] = output_path
+            wandb.finish()
+            print(f"[wandb] logged eval run '{run_name}' to project '{project}'")
+        except Exception as e:
+            print(f"[wandb] logging skipped due to error: {e}")
 
 
 if __name__ == "__main__":

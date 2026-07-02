@@ -364,6 +364,14 @@ _eval_lora_adapter() {
         qwen2.5-7b) echo "Qwen/Qwen2.5-7B-Instruct" ;;
     esac)"
 
+    # wandb wiring: --wandb + --wandb_group=<arm> for eval_tooluse.py,
+    # --wandb_args project=X,name=Y,group=Z for lm_eval. Both no-op when REPORT_TO != wandb.
+    local wb_eval=() wb_lm=()
+    if [[ "$REPORT_TO" == "wandb" ]]; then
+        wb_eval=(--wandb --wandb_project "$WANDB_PROJECT" --wandb_group "$out_prefix")
+        wb_lm=(--wandb_args "project=${WANDB_PROJECT},name=eval_${out_prefix}_forgetting,group=${out_prefix},job_type=eval")
+    fi
+
     # vLLM rejects --adapter_path; adapter evals use HF engine.
     run_step "eval.${out_prefix}.eval" "eval_lora/${out_prefix}_eval.log" \
         "$PYTHON" eval_tooluse.py \
@@ -371,7 +379,9 @@ _eval_lora_adapter() {
             --adapter_path "$adapter_dir" \
             --engine hf \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
-            --output_dir "baselines/${out_prefix}_eval"
+            --output_dir "baselines/${out_prefix}_eval" \
+            --wandb_run_name "eval_${out_prefix}_eval" \
+            "${wb_eval[@]}"
 
     run_step "eval.${out_prefix}.holdout" "eval_lora/${out_prefix}_holdout.log" \
         "$PYTHON" eval_tooluse.py \
@@ -380,7 +390,9 @@ _eval_lora_adapter() {
             --engine hf \
             --eval_data data/tooluse_data/train_subset_holdout \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
-            --output_dir "baselines/${out_prefix}_holdout"
+            --output_dir "baselines/${out_prefix}_holdout" \
+            --wandb_run_name "eval_${out_prefix}_holdout" \
+            "${wb_eval[@]}"
 
     # peft= loads the adapter without merging.
     run_step "eval.${out_prefix}.forgetting" "eval_lora/${out_prefix}_forgetting.log" \
@@ -390,7 +402,8 @@ _eval_lora_adapter() {
             --tasks hellaswag,mmlu,truthfulqa_mc2,winogrande,humaneval,ifeval \
             --batch_size 8 \
             --output_path "baselines/${out_prefix}_forgetting" \
-            --confirm_run_unsafe_code
+            --confirm_run_unsafe_code \
+            "${wb_lm[@]}"
 }
 
 # Order: classic_sft → sdft_ema → sdft → online_sft. Fastest / most novel first.

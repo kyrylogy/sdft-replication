@@ -6,6 +6,9 @@
 set -euo pipefail
 export HF_HOME=/var/nfs/hf-cache
 export HF_HUB_CACHE=/var/nfs/hf-cache/hub
+# humaneval invokes evaluate's code_eval metric which has its OWN safety gate
+# independent of lm-eval's --confirm_run_unsafe_code. Both must be set.
+export HF_ALLOW_CODE_EVAL="${HF_ALLOW_CODE_EVAL:-1}"
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
@@ -155,10 +158,16 @@ _eval_arm_safely() {
     local arm_label="$1" model_short="$2" outdir="$3" out_prefix="$4"
     if ! _adapter_ready "$outdir"; then
         echo "[phase] $arm_label: adapter missing at ${outdir}/lora_adapter — SKIPPING evals"
-        FAILED_STEPS+=("$arm_label.eval (no adapter)")
+        FAILED_STEPS+=("$arm_label.eval_data (no adapter)")
+        FAILED_STEPS+=("$arm_label.holdout (no adapter)")
+        FAILED_STEPS+=("$arm_label.forgetting (no adapter)")
         return 0
     fi
-    _safe_step "$arm_label.eval" _eval_lora_adapter "$model_short" "${outdir}/lora_adapter" "$out_prefix"
+    # Each sub-eval is wrapped independently → the FAILED_STEPS summary
+    # attributes correctly (e.g. "arm1.classic_sft.forgetting" not ".eval").
+    _safe_step "$arm_label.eval_data"  _eval_sub_eval_data  "$model_short" "${outdir}/lora_adapter" "$out_prefix"
+    _safe_step "$arm_label.holdout"    _eval_sub_holdout    "$model_short" "${outdir}/lora_adapter" "$out_prefix"
+    _safe_step "$arm_label.forgetting" _eval_sub_forgetting "$model_short" "${outdir}/lora_adapter" "$out_prefix"
 }
 
 # ============================================================================
@@ -357,25 +366,19 @@ _train_lora() {
             "${extra_flags[@]}"
 }
 
-_eval_lora_adapter() {
+# Three sub-eval functions (called independently by _eval_arm_safely so each
+# failure is attributed correctly in the FAILED_STEPS summary). vLLM rejects
+# --adapter_path, so all use HF engine.
+
+_eval_sub_eval_data() {
     local model_short="$1" adapter_dir="$2" out_prefix="$3"
     local base_id
     base_id="$(_model_id "$model_short")"
-
-    # wandb wiring: eval_tooluse.py uses --wandb flags, lm_eval uses --wandb_args.
-    # Everything wandb-related is inside these guards; no-op when REPORT_TO != wandb.
-    local wb_eval_split=() wb_holdout_split=() wb_lm=()
+    local wb=()
     if [[ "$REPORT_TO" == "wandb" ]]; then
-        wb_eval_split=(--wandb --wandb_project "$WANDB_PROJECT"
-                       --wandb_group "$out_prefix"
-                       --wandb_run_name "eval_${out_prefix}_eval")
-        wb_holdout_split=(--wandb --wandb_project "$WANDB_PROJECT"
-                          --wandb_group "$out_prefix"
-                          --wandb_run_name "eval_${out_prefix}_holdout")
-        wb_lm=(--wandb_args "project=${WANDB_PROJECT},name=eval_${out_prefix}_forgetting,group=${out_prefix},job_type=eval")
+        wb=(--wandb --wandb_project "$WANDB_PROJECT" --wandb_group "$out_prefix"
+            --wandb_run_name "eval_${out_prefix}_eval")
     fi
-
-    # vLLM rejects --adapter_path; adapter evals use HF engine.
     run_step "eval.${out_prefix}.eval" "eval_lora/${out_prefix}_eval.log" \
         "$PYTHON" eval_tooluse.py \
             --model_path "$base_id" \
@@ -383,8 +386,18 @@ _eval_lora_adapter() {
             --engine hf \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_eval" \
-            "${wb_eval_split[@]}"
+            "${wb[@]}"
+}
 
+_eval_sub_holdout() {
+    local model_short="$1" adapter_dir="$2" out_prefix="$3"
+    local base_id
+    base_id="$(_model_id "$model_short")"
+    local wb=()
+    if [[ "$REPORT_TO" == "wandb" ]]; then
+        wb=(--wandb --wandb_project "$WANDB_PROJECT" --wandb_group "$out_prefix"
+            --wandb_run_name "eval_${out_prefix}_holdout")
+    fi
     run_step "eval.${out_prefix}.holdout" "eval_lora/${out_prefix}_holdout.log" \
         "$PYTHON" eval_tooluse.py \
             --model_path "$base_id" \
@@ -393,11 +406,20 @@ _eval_lora_adapter() {
             --eval_data data/tooluse_data/train_subset_holdout \
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_holdout" \
-            "${wb_holdout_split[@]}"
+            "${wb[@]}"
+}
 
-    # peft= loads the adapter without merging.
-    # Invoked via `python -m lm_eval` (not $VENV_DIR/bin/lm_eval) so the module
-    # import is the requirement, not the entry-point binary — more portable.
+# Invoked via `python -m lm_eval` so the module import is the requirement,
+# not the entry-point binary. peft= loads the adapter without merging.
+# humaneval also needs HF_ALLOW_CODE_EVAL=1 (exported at file top).
+_eval_sub_forgetting() {
+    local model_short="$1" adapter_dir="$2" out_prefix="$3"
+    local base_id
+    base_id="$(_model_id "$model_short")"
+    local wb=()
+    if [[ "$REPORT_TO" == "wandb" ]]; then
+        wb=(--wandb_args "project=${WANDB_PROJECT},name=eval_${out_prefix}_forgetting,group=${out_prefix},job_type=eval")
+    fi
     run_step "eval.${out_prefix}.forgetting" "eval_lora/${out_prefix}_forgetting.log" \
         "$PYTHON" -m lm_eval \
             --model hf \
@@ -406,7 +428,7 @@ _eval_lora_adapter() {
             --batch_size 8 \
             --output_path "baselines/${out_prefix}_forgetting" \
             --confirm_run_unsafe_code \
-            "${wb_lm[@]}"
+            "${wb[@]}"
 }
 
 # RUN_TAG is threaded through runs/ and baselines/ so tagged experiments are

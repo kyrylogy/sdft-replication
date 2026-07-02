@@ -1,64 +1,12 @@
 #!/usr/bin/env bash
-# ============================================================================
-# run_cluster.sh — Single orchestrator for the cluster A100 run.
-#
-# Hardware: ONE A100 40GB. Previously had a ~15GB orphan eating headroom; that
-# has cleared. The script's memory budgeting assumes the full ~40GB is now
-# available; if a co-tenant returns, drop VLLM_MEM_EVAL / VLLM_MEM_TRAIN to
-# compensate.
-#
-# What fits:
-#   - 3B anything (LoRA train, eval, ceiling): comfortable.
-#   - 7B eval, 7B LoRA in bf16: fine.
-#   - 7B SDFT FULL-FT (student+teacher resident ~28GB + grads/opt/KV): does
-#     NOT fit; intentionally NOT in this script.
-#
-# Phases (LoRA-focused after Simon's scope change; eval phases retained as
-# the practical-work artifact + eval-chain validation):
-#   evals  — calibration, 7B ceiling, 3B grid (eval-only, validates pipeline)
-#   train  — LoRA training matrix (the thesis core)
-#
-# Training matrix per size:
-#   classic_sft     classic offline SFT-LoRA, no teacher, no rollouts (CE on
-#                   golden_response). The canonical SFT baseline.
-#   sdft            SDFT-LoRA with frozen-base teacher (A.3 underperforming
-#                   arm — lower-bound for SDFT under LoRA).
-#   sdft_ema        SDFT-LoRA with adapter-EMA teacher (A.3 recommended arm,
-#                   paper-faithful). The teacher gets its own LoRA, EMA-mixed
-#                   from the student's LoRA each step.
-#   online_sft      "online SFT" — teacher rolls out completions (requires
-#                   vLLM). On-policy-isolation ablation, not the SFT baseline.
-#
-# Comparisons:
-#   within-size:  classic_sft vs sdft vs sdft_ema  → SDFT-vs-SFT thesis claim
-#   across-size:  3B vs 7B per arm                 → does the gap scale?
-#   teacher arm:  sdft vs sdft_ema                 → settles the A.3 confound
-#
-# Usage:
-#   ./run_cluster.sh setup        # one-time: create venv + install deps
-#   ./run_cluster.sh phase1       # calibration: eval 3 known 7B checkpoints
-#   ./run_cluster.sh phase2       # 7B ceiling: base + teacher_ceiling
-#   ./run_cluster.sh phase3       # 3B 4-cell grid re-run on CUDA
-#   ./run_cluster.sh phase4       # 3B LoRA matrix (4 arms) + evals
-#   ./run_cluster.sh phase5       # 7B LoRA matrix (3 arms; no online_sft) + evals
-#   ./run_cluster.sh phase6       # post-hoc strict scorer audit
-#   ./run_cluster.sh phase7       # summary table across all eval_results.json
-#   ./run_cluster.sh evals        # phase1 + phase2 + phase3 + phase6 + phase7
-#   ./run_cluster.sh training     # phase4 + phase5 + phase6 + phase7
-#   ./run_cluster.sh all          # setup -> phase7
-#
-# Per-phase logs land in logs/cluster_<YYYYMMDD>/<phase>.log; wall times in
-# logs/cluster_<YYYYMMDD>/wall_times.csv. Both should be copied off the pod
-# to NFS for reproducibility.
-# ============================================================================
+# run_cluster.sh — orchestrator for the cluster A100 run.
+# Usage: ./run_cluster.sh <command>   (see: ./run_cluster.sh help)
+# Logs:  logs/cluster_<YYYYMMDD>/<phase>/<step>.log  +  wall_times.csv
 
 set -euo pipefail
 export HF_HOME=/var/nfs/hf-cache
 export HF_HUB_CACHE=/var/nfs/hf-cache/hub
 
-# ----------------------------------------------------------------------------
-# Paths / config
-# ----------------------------------------------------------------------------
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
 
@@ -70,79 +18,40 @@ mkdir -p "$LOG_DIR"
 VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON="${VENV_DIR}/bin/python"
 
-# Knobs — every one of these honors environment overrides at call time:
-#   VLLM_MEM=0.25 NUM_TRAIN_EPOCHS=1.0 ./run_cluster.sh phase4
-# Edit only the right-hand-side defaults; the `:-` pattern picks the env
-# value if set, otherwise falls back here.
-
-# Eval hyperparameters (reference protocol)
 EVAL_MAX_NEW_TOKENS="${EVAL_MAX_NEW_TOKENS:-2048}"
 EVAL_TEMP="${EVAL_TEMP:-0.0}"
 
-# LoRA training hyperparameters
 LORA_R="${LORA_R:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 LORA_LR="${LORA_LR:-1e-4}"
 NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-2.0}"
-GRAD_ACCUM="${GRAD_ACCUM:-32}"   # matches Khamis et al. 7B-FT reproduction's effective batch 32 (paper sweep was {16,32,64})
+GRAD_ACCUM="${GRAD_ACCUM:-32}"   # Khamis et al. effective batch 32
 
-# Intermediate checkpointing — so a mid-arm kill (especially in the 5-8h 7B
-# arms under HF generate) only loses up to SAVE_STEPS worth of work, not the
-# whole run. Resume manually via:
-#   ./run_cluster.sh — won't auto-resume; instead invoke the trainer directly:
-#   .venv/bin/python train_sdft_lora.py --resume_from_checkpoint auto ... (same flags as the original)
 SAVE_STEPS="${SAVE_STEPS:-50}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"
 
-# EMA mixup rate for adapter-EMA teacher (sdft_ema arm only).
-# Mixing rule: teacher = (1-α)·teacher + α·student. α is the teacher's
-# tracking SPEED. Paper used 0.01 for full-FT EMA; under LoRA the dynamics
-# differ (A/B scale, B=0 init, effective delta depends on rank+lora_alpha)
-# so 0.01 is a starting guess, NOT a known-good.
-#
-# Reading the kl_approx curve vs the FROZEN arm — be careful: in the
-# frozen arm the teacher is a stationary target, so kl_approx is
-# student-moves-toward-fixed-point. In the EMA arm the teacher chases
-# the student, so the same kl_approx value reflects a gap closing from
-# BOTH sides. EMA's curve may sit at a LOWER absolute level (e.g.
-# 0.05-0.15 vs frozen's 0.1-0.3) while being equally healthy. Compare
-# SHAPE (slow drift, non-collapsing, non-exploding), not absolute band.
-# A lower-but-stable EMA curve is NOT a failure signal.
-#
-# Failure → fix mapping (DON'T invert these):
-#   kl_approx collapses to ~0 in <50 steps   →  α TOO HIGH (teacher catches
-#                                                student before signal
-#                                                accumulates).  LOWER α:
-#       EMA_ALPHA=0.001 RUN_TAG=ema_a001 ./run_cluster.sh canary
-#   entropy explodes (>~2.5 nats early)      →  α TOO LOW (teacher lags,
-#                                                student drifts).  RAISE α:
-#       EMA_ALPHA=0.05  RUN_TAG=ema_a05  ./run_cluster.sh canary
-#       EMA_ALPHA=0.1   RUN_TAG=ema_a10  ./run_cluster.sh canary
+# teacher = (1-α)·teacher + α·student.
+# kl_approx collapses → α too HIGH; entropy explodes → α too LOW.
 EMA_ALPHA="${EMA_ALPHA:-0.01}"
 
-# Metric tracking — default to wandb. Set REPORT_TO=none to skip.
 REPORT_TO="${REPORT_TO:-wandb}"
 WANDB_PROJECT="${WANDB_PROJECT:-sdft-replication}"
 
-# vLLM memory utilization — SPLIT between eval (pure vLLM) and training
-# (colocated with HF student+teacher resident).
-#   VLLM_MEM_EVAL  = 0.5  → ~20 GB on A100; safe for 7B vLLM-only.
-#   VLLM_MEM_TRAIN = 0.3  → paper-default (main.py); leaves headroom for
-#                            colocated student+teacher in HF.
-# The old single $VLLM_MEM alias still works for back-compat; if set, it
-# overrides both. Otherwise the two split values apply per phase.
+# EVAL is pure-vLLM (0.5); TRAIN is colocated with HF student+teacher (0.3).
 VLLM_MEM_EVAL="${VLLM_MEM_EVAL:-0.5}"
 VLLM_MEM_TRAIN="${VLLM_MEM_TRAIN:-0.3}"
-VLLM_MEM="${VLLM_MEM:-}"   # back-compat — if set, used for BOTH
+VLLM_MEM="${VLLM_MEM:-}"
 if [[ -n "$VLLM_MEM" ]]; then
     VLLM_MEM_EVAL="$VLLM_MEM"
     VLLM_MEM_TRAIN="$VLLM_MEM"
 fi
 VLLM_MODE="${VLLM_MODE:-colocate}"
 
-# ----------------------------------------------------------------------------
+REUSE_ADAPTERS="${REUSE_ADAPTERS:-1}"
+
+# ============================================================================
 # Helpers
-# ----------------------------------------------------------------------------
+# ============================================================================
 log_phase() {
     local title="$1"
     echo
@@ -152,8 +61,7 @@ log_phase() {
     echo "============================================================"
 }
 
-# run_step <step_name> <log_subpath> <command...>
-# Tees stdout+stderr to the log, records wall time to CSV.
+# run_step <name> <log_subpath> <cmd...>   Tees to log, records wall time.
 run_step() {
     local step="$1"; shift
     local log_subpath="$1"; shift
@@ -189,9 +97,72 @@ require_venv() {
     fi
 }
 
-# ----------------------------------------------------------------------------
-# Phase 0 — setup
-# ----------------------------------------------------------------------------
+# Fault-tolerance for phase4/phase5: one failing eval must not abort a 16-20h phase.
+FAILED_STEPS=()
+
+_safe_step() {
+    local label="$1"; shift
+    local rc=0
+    "$@" || rc=$?
+    if (( rc != 0 )); then
+        echo
+        echo "[phase] STEP FAILED: $label (exit $rc). Continuing to next step."
+        FAILED_STEPS+=("$label (exit $rc)")
+    fi
+    return 0
+}
+
+_print_failed_summary() {
+    local phase_label="$1"
+    echo
+    if (( ${#FAILED_STEPS[@]} == 0 )); then
+        echo "[$phase_label] All steps completed cleanly."
+        return 0
+    fi
+    echo "============================================================"
+    echo "  [$phase_label] Completed with ${#FAILED_STEPS[@]} FAILED step(s):"
+    for step in "${FAILED_STEPS[@]}"; do
+        echo "    - $step"
+    done
+    echo "  Re-run with REUSE_ADAPTERS=1 (default) to skip successful arms."
+    echo "============================================================"
+}
+
+_adapter_ready() {
+    [[ -s "${1}/lora_adapter/adapter_config.json" ]]
+}
+
+_maybe_train_classic_sft() {
+    local model_short="$1" outdir="$2"
+    if [[ "$REUSE_ADAPTERS" == "1" ]] && _adapter_ready "$outdir"; then
+        echo "[reuse] classic_sft ${model_short}: adapter at ${outdir}/lora_adapter — SKIPPING training"
+        return 0
+    fi
+    _train_classic_sft "$model_short" "$outdir"
+}
+
+_maybe_train_lora() {
+    local mode="$1" model_short="$2" outdir="$3"
+    if [[ "$REUSE_ADAPTERS" == "1" ]] && _adapter_ready "$outdir"; then
+        echo "[reuse] ${mode} ${model_short}: adapter at ${outdir}/lora_adapter — SKIPPING training"
+        return 0
+    fi
+    _train_lora "$mode" "$model_short" "$outdir"
+}
+
+_eval_arm_safely() {
+    local arm_label="$1" model_short="$2" outdir="$3" out_prefix="$4"
+    if ! _adapter_ready "$outdir"; then
+        echo "[phase] $arm_label: adapter missing at ${outdir}/lora_adapter — SKIPPING evals"
+        FAILED_STEPS+=("$arm_label.eval (no adapter)")
+        return 0
+    fi
+    _safe_step "$arm_label.eval" _eval_lora_adapter "$model_short" "${outdir}/lora_adapter" "$out_prefix"
+}
+
+# ============================================================================
+# Phases
+# ============================================================================
 phase0_setup() {
     log_phase "Phase 0 — setup"
 
@@ -215,22 +186,16 @@ phase0_setup() {
     echo "[venv] installing requirements.txt"
     uv pip install --python "$PYTHON" -r requirements.txt
 
-    # lm-evaluation-harness — pinned to the commit upstream README references.
     echo "[venv] installing lm-evaluation-harness for the forgetting suite"
     uv pip install --python "$PYTHON" \
         "git+https://github.com/EleutherAI/lm-evaluation-harness@03c44adc0586f88bb343a74da1a1c602103536dd"
 
-    echo "[venv] dependency snapshot saved to ${LOG_DIR}/pip_freeze.txt"
     "$PYTHON" -m pip freeze > "${LOG_DIR}/pip_freeze.txt"
-
     echo "[ok] setup complete"
 }
 
-# ----------------------------------------------------------------------------
-# Phase 1 — calibration (eval 3 known 7B checkpoints; expect ~70 / ~70 / ~42.2)
-# ----------------------------------------------------------------------------
 phase1_calibration() {
-    log_phase "Phase 1 — calibration (3 known 7B checkpoints)"
+    log_phase "Phase 1 — calibration (3 known 7B checkpoints; expect ~70 / ~70 / ~42.2)"
     require_venv
 
     local calib=(
@@ -254,9 +219,6 @@ phase1_calibration() {
     done
 }
 
-# ----------------------------------------------------------------------------
-# Phase 2 — 7B base + ceiling on eval split (scale point)
-# ----------------------------------------------------------------------------
 phase2_7b_ceiling() {
     log_phase "Phase 2 — 7B base + ceiling on eval_data"
     require_venv
@@ -281,9 +243,6 @@ phase2_7b_ceiling() {
             --output_dir baselines/qwen2.5-7b-instruct-ceiling-cuda
 }
 
-# ----------------------------------------------------------------------------
-# Phase 3 — 3B 4-cell grid re-run on CUDA (numerics check vs MPS)
-# ----------------------------------------------------------------------------
 phase3_3b_grid() {
     log_phase "Phase 3 — 3B 4-cell grid on CUDA"
     require_venv
@@ -325,20 +284,6 @@ phase3_3b_grid() {
             --output_dir baselines/qwen2.5-3b-instruct-holdout-ceiling-cuda
 }
 
-# ----------------------------------------------------------------------------
-# Phase 4 / 5 — LoRA training matrix (4 arms × 2 sizes)
-# ----------------------------------------------------------------------------
-# Arms: classic_sft | sdft | sdft_ema | online_sft
-# - classic_sft : train_sft_lora.py (TRL SFTTrainer, CE on golden_response).
-#                 No teacher, no vLLM. Fits 3B AND 7B comfortably.
-# - sdft        : train_sdft_lora.py with frozen-base teacher (A.3 worse arm).
-# - sdft_ema    : train_sdft_lora.py + --teacher_adapter_ema. Paper-faithful
-#                 EMA-of-student teacher recovered under LoRA. Two LoRA wraps
-#                 (student + teacher) but both small; fits 3B and 7B.
-# - online_sft  : train_sdft_lora.py + --generate_from_teacher. On-policy SFT
-#                 isolation ablation. Requires vLLM → skipped at 7B (vLLM
-#                 student copy + resident student+teacher overflow 40 GB).
-
 _model_id() {
     case "$1" in
         qwen2.5-3b) echo "Qwen/Qwen2.5-3B-Instruct" ;;
@@ -347,11 +292,8 @@ _model_id() {
     esac
 }
 
-# Classic offline SFT-LoRA — separate trainer, no teacher, no rollouts.
 _train_classic_sft() {
-    local model_short="$1"
-    local outdir="$2"
-
+    local model_short="$1" outdir="$2"
     run_step "train.classic_sft_lora_${model_short}" "phase_train/classic_sft_lora_${model_short}.log" \
         "$PYTHON" train_sft_lora.py \
             --model_name "$(_model_id "$model_short")" \
@@ -372,43 +314,25 @@ _train_classic_sft() {
             --run_name "classic_sft_lora_${model_short}_${RUN_TAG}"
 }
 
-# SDFT-LoRA variants — all share train_sdft_lora.py with mode-specific flags.
 _train_lora() {
-    local mode="$1"           # sdft | sdft_ema | online_sft
-    local model_short="$2"    # qwen2.5-3b | qwen2.5-7b
-    local outdir="$3"
+    local mode="$1" model_short="$2" outdir="$3"
     local extra_flags=()
 
     case "$mode" in
-        sdft)
-            ;;
-        sdft_ema)
-            extra_flags+=(--teacher_adapter_ema --ema_alpha "$EMA_ALPHA")
-            ;;
-        online_sft)
-            # Teacher rolls out → online SFT (NOT the classic SFT baseline).
-            extra_flags+=(--generate_from_teacher)
-            ;;
+        sdft) ;;
+        sdft_ema)    extra_flags+=(--teacher_adapter_ema --ema_alpha "$EMA_ALPHA") ;;
+        online_sft)  extra_flags+=(--generate_from_teacher) ;;
         *) echo "unknown train mode: $mode" >&2; exit 1 ;;
     esac
 
-    # vLLM rollouts: ON for 3B always; for 7B only when memory clearly fits
-    # (sdft & sdft_ema can fit if VLLM_MEM_TRAIN is conservative; online_sft
-    # at 7B requires vLLM but doesn't fit and is gated upstream).
-    case "$model_short" in
-        qwen2.5-3b)
-            extra_flags+=(--use_vllm
-                          --vllm_mode "$VLLM_MODE"
-                          --vllm_gpu_memory_utilization "$VLLM_MEM_TRAIN"
-                          --vllm_enable_sleep_mode
-                          --vllm_importance_sampling_correction)
-            ;;
-        qwen2.5-7b)
-            # 7B without vLLM. HF generate path; works for sdft / sdft_ema
-            # (student samples). online_sft at 7B is gated by caller.
-            :
-            ;;
-    esac
+    # 3B rollouts go through vLLM colocate; 7B uses HF generate (vLLM copy overflows 40GB).
+    if [[ "$model_short" == "qwen2.5-3b" ]]; then
+        extra_flags+=(--use_vllm
+                      --vllm_mode "$VLLM_MODE"
+                      --vllm_gpu_memory_utilization "$VLLM_MEM_TRAIN"
+                      --vllm_enable_sleep_mode
+                      --vllm_importance_sampling_correction)
+    fi
 
     run_step "train.${mode}_lora_${model_short}" "phase_train/${mode}_lora_${model_short}.log" \
         "$PYTHON" train_sdft_lora.py \
@@ -433,17 +357,14 @@ _train_lora() {
 }
 
 _eval_lora_adapter() {
-    local model_short="$1"
-    local adapter_dir="$2"
-    local out_prefix="$3"
+    local model_short="$1" adapter_dir="$2" out_prefix="$3"
     local base_id
     base_id="$(case "$model_short" in
         qwen2.5-3b) echo "Qwen/Qwen2.5-3B-Instruct" ;;
         qwen2.5-7b) echo "Qwen/Qwen2.5-7B-Instruct" ;;
     esac)"
 
-    # vLLM rejects --adapter_path; use HF engine for adapter eval.
-    # Tool-use, eval_data
+    # vLLM rejects --adapter_path; adapter evals use HF engine.
     run_step "eval.${out_prefix}.eval" "eval_lora/${out_prefix}_eval.log" \
         "$PYTHON" eval_tooluse.py \
             --model_path "$base_id" \
@@ -452,7 +373,6 @@ _eval_lora_adapter() {
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_eval"
 
-    # Tool-use, holdout
     run_step "eval.${out_prefix}.holdout" "eval_lora/${out_prefix}_holdout.log" \
         "$PYTHON" eval_tooluse.py \
             --model_path "$base_id" \
@@ -462,7 +382,7 @@ _eval_lora_adapter() {
             --max_new_tokens "$EVAL_MAX_NEW_TOKENS" --temperature "$EVAL_TEMP" \
             --output_dir "baselines/${out_prefix}_holdout"
 
-    # Forgetting suite (lm-eval-harness) — peft= loads the adapter without merging.
+    # peft= loads the adapter without merging.
     run_step "eval.${out_prefix}.forgetting" "eval_lora/${out_prefix}_forgetting.log" \
         "$VENV_DIR/bin/lm_eval" \
             --model hf \
@@ -473,114 +393,81 @@ _eval_lora_adapter() {
             --confirm_run_unsafe_code
 }
 
+# Order: classic_sft → sdft_ema → sdft → online_sft. Fastest / most novel first.
 phase4_3b_lora() {
-    log_phase "Phase 4 — 3B LoRA matrix (classic_sft, sdft_ema, sdft, online_sft) + evals"
+    log_phase "Phase 4 — 3B LoRA matrix + evals"
     require_venv
+    FAILED_STEPS=()
 
-    # CANARY-LED ORDER. classic_sft is the fastest path AND validates the
-    # data pipeline + TRL assistant_only_loss feature. sdft_ema is second
-    # because it validates the LoRAEMACallback (asserts on step 1 if LoRA
-    # pairing is wrong). sdft (frozen) is known-good from earlier smoke.
-    # online_sft is last because it's the most expensive and least critical.
+    echo "[phase4] REUSE_ADAPTERS=$REUSE_ADAPTERS   fault-tolerant across arms"
+    echo
 
-    # 1) CANARY 1: classic offline SFT-LoRA — data path + TRL feature.
-    _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/classic_sft_lora_3b/lora_adapter classic_sft_lora_3b
+    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
+    _eval_arm_safely      "arm1.classic_sft" qwen2.5-3b runs/classic_sft_lora_3b classic_sft_lora_3b
 
-    # 2) CANARY 2: SDFT-LoRA with adapter-EMA teacher — validates EMA callback.
-    _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/sdft_ema_lora_3b/lora_adapter sdft_ema_lora_3b
+    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
+    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-3b runs/sdft_ema_lora_3b    sdft_ema_lora_3b
 
-    # 3) SDFT-LoRA, frozen-base teacher (A.3 worse arm; safety net).
-    _train_lora sdft qwen2.5-3b runs/sdft_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/sdft_lora_3b/lora_adapter sdft_lora_3b
+    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-3b runs/sdft_lora_3b
+    _eval_arm_safely      "arm3.sdft"        qwen2.5-3b runs/sdft_lora_3b        sdft_lora_3b
 
-    # 4) Online SFT — on-policy-isolation ablation, not the SFT baseline.
-    _train_lora online_sft qwen2.5-3b runs/online_sft_lora_3b
-    _eval_lora_adapter qwen2.5-3b runs/online_sft_lora_3b/lora_adapter online_sft_lora_3b
+    _safe_step "arm4.online_sft.train" _maybe_train_lora online_sft qwen2.5-3b runs/online_sft_lora_3b
+    _eval_arm_safely      "arm4.online_sft"  qwen2.5-3b runs/online_sft_lora_3b  online_sft_lora_3b
+
+    _print_failed_summary "phase4"
 }
 
-# Run JUST the two canary trainings — no evals, no other arms. Use this to
-# validate the matrix before committing the 16h+ full phase4.
+# Runs only classic_sft + sdft_ema at 3B, no evals. Fail-fast for a full phase4.
 phase4_canary() {
-    log_phase "Phase 4 — CANARY (classic_sft + sdft_ema 3B training only, no evals)"
+    log_phase "Phase 4 — CANARY (classic_sft + sdft_ema 3B training only)"
     require_venv
 
-    echo "[canary] sdft_ema arm will use EMA_ALPHA=$EMA_ALPHA"
-    echo "[canary] Mixing rule: teacher = (1-α)·teacher + α·student"
-    echo "[canary]   kl_approx collapses → α TOO HIGH → LOWER:  EMA_ALPHA=0.001"
-    echo "[canary]   entropy explodes    → α TOO LOW  → RAISE: EMA_ALPHA=0.05 or 0.1"
+    echo "[canary] EMA_ALPHA=$EMA_ALPHA   teacher = (1-α)·teacher + α·student"
+    echo "[canary]   kl_approx collapses → α TOO HIGH → LOWER (EMA_ALPHA=0.001)"
+    echo "[canary]   entropy explodes    → α TOO LOW  → RAISE (EMA_ALPHA=0.05 / 0.1)"
     echo
 
     _train_classic_sft qwen2.5-3b runs/classic_sft_lora_3b
     _train_lora sdft_ema qwen2.5-3b runs/sdft_ema_lora_3b
 
-    echo
-    echo "[canary] Both training canaries finished. If wandb shows healthy"
-    echo "[canary]   curves for both runs, launch the full phase4."
-    echo "[canary] Quick checks:"
-    echo "[canary]   - [ema] line on canary 2: 'matched N LoRA parameter pairs' —"
-    echo "[canary]     expected N = 7 target_modules × 2 (A+B) × num_layers."
-    echo "[canary]     Qwen2.5-3B has 36 layers → N=504. Glance to confirm; a low"
-    echo "[canary]     N would mean teacher LoRA isn't fully shadowing student."
-    echo "[canary]   - classic_sft loss curve: should decrease from ~1-2 toward <0.5 by epoch 1"
-    echo "[canary]   - sdft_ema kl_approx: compare SHAPE not LEVEL to sdft frozen."
-    echo "[canary]     EMA arm may sit lower (e.g. 0.05-0.15 vs frozen's 0.1-0.3) and"
-    echo "[canary]     still be healthy — the teacher chases the student, so the gap"
-    echo "[canary]     closes from both sides. Failure is collapse-to-zero or NaN."
-    echo "[canary]     Collapse-to-~0 in <50 steps => α too high. LOWER α:"
-    echo "[canary]     EMA_ALPHA=0.001 RUN_TAG=ema_a001 ./run_cluster.sh canary"
-    echo "[canary]   - sdft_ema entropy: should hover similarly to sdft — NOT exploding above"
-    echo "[canary]     ~2.5 nats early (=> α too low). If it does, RAISE α:"
-    echo "[canary]     EMA_ALPHA=0.05 RUN_TAG=ema_a05 ./run_cluster.sh canary"
-    echo "[canary]   - both adapters saved at runs/<name>/lora_adapter/"
-    echo "[canary]   - intermediate checkpoints at runs/<name>/checkpoint-{50,100,...}/"
+    cat <<'EOF'
+
+[canary] Both trainings finished. Quick checks:
+  - [ema] log line 'matched N LoRA parameter pairs' — Qwen2.5-3B → N=504
+    (36 layers × 7 modules × 2 A+B). Lower N = teacher LoRA not fully shadowing student.
+  - classic_sft loss: down from ~1-2 toward <0.5 by epoch 1.
+  - sdft_ema kl_approx: compare SHAPE not LEVEL vs sdft frozen. EMA may sit
+    lower (teacher chases) and still be healthy. Failure = collapse-to-0 or NaN.
+  - Adapters at runs/<name>/lora_adapter/, intermediate ckpts at checkpoint-N/.
+EOF
 }
 
 phase5_7b_lora() {
-    log_phase "Phase 5 — 7B LoRA matrix (classic_sft, sdft_ema, sdft) + evals"
+    log_phase "Phase 5 — 7B LoRA matrix + evals (online_sft skipped: vLLM copy overflows 40GB)"
     require_venv
+    FAILED_STEPS=()
 
-    # Same canary-led order as phase4. classic_sft is fastest, sdft_ema
-    # validates the EMA callback at 7B (different LoRA shapes, worth its
-    # own canary), sdft is the safety net. 7B SDFT arms use HF generate
-    # (no vLLM) so each is 5-8h — wandb + SAVE_STEPS=50 mean a kill at
-    # hour 6 only loses <2h of work, not the whole arm.
+    echo "[phase5] REUSE_ADAPTERS=$REUSE_ADAPTERS   fault-tolerant across arms"
+    echo
 
-    # 1) CANARY 1: classic offline SFT-LoRA — fits trivially at 7B.
-    _train_classic_sft qwen2.5-7b runs/classic_sft_lora_7b
-    _eval_lora_adapter qwen2.5-7b runs/classic_sft_lora_7b/lora_adapter classic_sft_lora_7b
+    _safe_step "arm1.classic_sft.train" _maybe_train_classic_sft qwen2.5-7b runs/classic_sft_lora_7b
+    _eval_arm_safely      "arm1.classic_sft" qwen2.5-7b runs/classic_sft_lora_7b classic_sft_lora_7b
 
-    # 2) CANARY 2: SDFT-LoRA at 7B with adapter-EMA teacher.
-    _train_lora sdft_ema qwen2.5-7b runs/sdft_ema_lora_7b
-    _eval_lora_adapter qwen2.5-7b runs/sdft_ema_lora_7b/lora_adapter sdft_ema_lora_7b
+    _safe_step "arm2.sdft_ema.train"   _maybe_train_lora sdft_ema qwen2.5-7b runs/sdft_ema_lora_7b
+    _eval_arm_safely      "arm2.sdft_ema"    qwen2.5-7b runs/sdft_ema_lora_7b    sdft_ema_lora_7b
 
-    # 3) SDFT-LoRA at 7B, frozen-base teacher (safety net).
-    _train_lora sdft qwen2.5-7b runs/sdft_lora_7b
-    _eval_lora_adapter qwen2.5-7b runs/sdft_lora_7b/lora_adapter sdft_lora_7b
+    _safe_step "arm3.sdft.train"       _maybe_train_lora sdft     qwen2.5-7b runs/sdft_lora_7b
+    _eval_arm_safely      "arm3.sdft"        qwen2.5-7b runs/sdft_lora_7b        sdft_lora_7b
 
-    # online_sft at 7B requires vLLM (HF generate ignores generate_from_teacher),
-    # and vLLM-student-copy + student/teacher resident overflows 40 GB. The
-    # classic_sft arm at 7B is the SFT baseline; the gap doesn't leave the
-    # scaling claim empty.
-    echo "[notice] Skipping online_sft 7B: requires vLLM colocate that overflows 40GB."
-    echo "[notice] classic_sft_7b is the load-bearing SFT baseline at 7B."
+    _print_failed_summary "phase5"
 }
 
-# ----------------------------------------------------------------------------
-# Phase 6 — strict-scorer audit pass over everything new
-# ----------------------------------------------------------------------------
 phase6_scorer_audit() {
     log_phase "Phase 6 — strict-scorer audit"
     require_venv
-
-    run_step "phase6.audit" "phase6/audit.log" \
-        "$PYTHON" scorer_audit.py
+    run_step "phase6.audit" "phase6/audit.log" "$PYTHON" scorer_audit.py
 }
 
-# ----------------------------------------------------------------------------
-# Phase 7 — summary table
-# ----------------------------------------------------------------------------
 phase7_summary() {
     log_phase "Phase 7 — summary"
     require_venv
@@ -626,9 +513,9 @@ PYEOF
     fi
 }
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Dispatch
-# ----------------------------------------------------------------------------
+# ============================================================================
 case "${1:-help}" in
     setup)     phase0_setup ;;
     phase1)    phase1_calibration ;;
@@ -657,66 +544,54 @@ case "${1:-help}" in
         ;;
     help|--help|-h|"")
         cat <<EOF
-run_cluster.sh — single orchestrator for the cluster A100 run.
-
-Hardware assumption: ONE A100 40GB with ~7.5GB already used by another
-process. Plan around ~33GB free. 7B FULL-FT SDFT does NOT fit and is not
-in this script; the LoRA pair at 7B is.
+run_cluster.sh — orchestrator for the cluster A100 run.
 
 Commands:
-  setup     create venv (.venv, Python 3.12) and install requirements.txt
-            plus lm-evaluation-harness (forgetting suite).
-  phase1    calibration: eval 3 known 7B checkpoints (expect ~70/~70/~42.2).
-  phase2    7B base + teacher_ceiling on eval_data (the scale point).
-  phase3    re-run the 3B 4-cell grid on CUDA.
-  phase4    3B LoRA matrix (4 arms):
-              classic_sft / sdft / sdft_ema / online_sft
-            + tool-use eval (eval_data + holdout) + forgetting suite per arm.
-  phase5    7B LoRA matrix (3 arms; online_sft skipped at 7B):
-              classic_sft / sdft / sdft_ema
-            + same eval shape.
-  phase6    strict-scorer audit pass over all new eval_responses.json.
-  phase7    summary table across baselines/*/eval_results.json.
+  setup     create venv + install requirements.txt + lm-eval-harness
+  phase1    calibration: 3 known 7B checkpoints (expect ~70 / ~70 / ~42.2)
+  phase2    7B base + teacher_ceiling on eval_data
+  phase3    3B 4-cell grid (eval_data × {base, ceiling} × {eval, holdout})
+  phase4    3B LoRA matrix (classic_sft, sdft_ema, sdft, online_sft) + evals
+  phase5    7B LoRA matrix (classic_sft, sdft_ema, sdft) + evals
+  phase6    strict-scorer audit over eval_responses.json
+  phase7    summary table across baselines/*/eval_results.json
 
-  canary          run JUST classic_sft_3b + sdft_ema_3b TRAINING (no evals)
-                  Use this as a fail-fast check before committing 16h+ of
-                  phase4. Catches: data-pipeline bugs, TRL feature mismatches,
-                  LoRAEMACallback pairing failures — all at step 1.
-  verify_targets  print one row through classic-SFT and SDFT pipelines side
-                  by side to confirm both consume full golden_response.
+  canary          classic_sft_3b + sdft_ema_3b training only, no evals
+  verify_targets  side-by-side classic-SFT vs SDFT format for one row
 
-  evals     phase1 + phase2 + phase3 + phase6 + phase7  (eval-only pipeline)
-  training  phase4 + phase5 + phase6 + phase7           (training-only)
-  all       setup -> phase1 -> ... -> phase7
+  evals     phase1 + phase2 + phase3 + phase6 + phase7
+  training  phase4 + phase5 + phase6 + phase7
+  all       phase0 → phase7
 
 Logs:       ${LOG_DIR}/<phase>/<step>.log
 Wall times: ${WALL_TIMES_CSV}
 
 Env overrides (prefix the command):
-  RUN_TAG=<str>            log dir suffix (default: today's YYYYMMDD)
-  VENV_DIR=<path>          venv location (default: .venv)
-  EVAL_MAX_NEW_TOKENS=<n>  default 2048
-  EVAL_TEMP=<f>            default 0.0 (greedy)
-  LORA_R=<n>               default 16
-  LORA_ALPHA=<n>           default 32
-  LORA_LR=<f>              default 1e-4
-  NUM_TRAIN_EPOCHS=<f>     default 2.0
-  GRAD_ACCUM=<n>           default 32 (Khamis et al. effective batch; paper sweep {16,32,64})
-  SAVE_STEPS=<n>           default 50 (mid-arm checkpoints; bumps survive kills)
-  SAVE_TOTAL_LIMIT=<n>     default 3 (keep last N checkpoints; older GC'd)
-  EMA_ALPHA=<f>            default 0.01 (sdft_ema teacher mixup; sweep if canary 2 misbehaves)
-  VLLM_MEM_EVAL=<f>        default 0.5 (pure-vLLM evals in phase 1/2/3)
-  VLLM_MEM_TRAIN=<f>       default 0.3 (colocated with student+teacher in phase 4)
-  VLLM_MEM=<f>             back-compat alias — if set, overrides BOTH above
-  VLLM_MODE=<colocate|server>  default colocate
-  REPORT_TO=<wandb|tensorboard|none>  default wandb (training metrics)
-  WANDB_PROJECT=<str>      default sdft-replication
-  WANDB_API_KEY=<str>      required for wandb; or run \`wandb login\` once
+  RUN_TAG=<str>                default: today's YYYYMMDD
+  VENV_DIR=<path>              default: .venv
+  EVAL_MAX_NEW_TOKENS=<n>      default: 2048
+  EVAL_TEMP=<f>                default: 0.0 (greedy)
+  LORA_R=<n>                   default: 16
+  LORA_ALPHA=<n>               default: 32
+  LORA_LR=<f>                  default: 1e-4
+  NUM_TRAIN_EPOCHS=<f>         default: 2.0
+  GRAD_ACCUM=<n>               default: 32 (Khamis et al.)
+  SAVE_STEPS=<n>               default: 50
+  SAVE_TOTAL_LIMIT=<n>         default: 3
+  EMA_ALPHA=<f>                default: 0.01 (sdft_ema teacher mixup)
+  REUSE_ADAPTERS=<0|1>         default: 1 (phase4/5 skip train if adapter exists)
+  VLLM_MEM_EVAL=<f>            default: 0.5
+  VLLM_MEM_TRAIN=<f>           default: 0.3
+  VLLM_MEM=<f>                 back-compat alias for both above
+  VLLM_MODE=<colocate|server>  default: colocate
+  REPORT_TO=<wandb|tensorboard|none>  default: wandb
+  WANDB_PROJECT=<str>          default: sdft-replication
+  WANDB_API_KEY=<str>          required for wandb (or run \`wandb login\`)
 
 Examples:
   VLLM_MEM=0.25 ./run_cluster.sh phase4
-  RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 LORA_R=32 LORA_ALPHA=64 ./run_cluster.sh phase4
-  REPORT_TO=wandb WANDB_PROJECT=sdft-thesis ./run_cluster.sh phase4
+  RUN_TAG=v2 NUM_TRAIN_EPOCHS=1.0 ./run_cluster.sh phase4
+  REUSE_ADAPTERS=0 RUN_TAG=v2 ./run_cluster.sh phase4      # force retrain
 EOF
         ;;
     *)

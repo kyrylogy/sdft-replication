@@ -53,6 +53,11 @@ VLLM_MODE="${VLLM_MODE:-colocate}"
 
 REUSE_ADAPTERS="${REUSE_ADAPTERS:-1}"
 
+# When re-running forgetting_3b / forgetting_7b after a partial run, skip arms
+# whose lm-eval output already exists on disk. Set REUSE_FORGETTING=0 to force
+# re-evaluation of every arm.
+REUSE_FORGETTING="${REUSE_FORGETTING:-1}"
+
 # ============================================================================
 # Helpers
 # ============================================================================
@@ -134,6 +139,15 @@ _print_failed_summary() {
 
 _adapter_ready() {
     [[ -s "${1}/lora_adapter/adapter_config.json" ]]
+}
+
+# True when a prior lm_eval forgetting run wrote its results JSON. Any file
+# named results*.json under the arm's forgetting dir counts (lm_eval versions
+# differ on exact naming). Used by forgetting_3b/forgetting_7b for idempotence.
+_forgetting_ready() {
+    local out_prefix="$1"
+    local d="baselines/${out_prefix}_forgetting"
+    [[ -d "$d" ]] && compgen -G "$d/**/results*.json" > /dev/null 2>&1
 }
 
 _maybe_train_classic_sft() {
@@ -520,6 +534,55 @@ phase5_7b_lora() {
     _print_failed_summary "phase5"
 }
 
+# Run ONLY the forgetting suite for each arm at the given size. Uses the same
+# _eval_sub_forgetting path (so HF_ALLOW_CODE_EVAL, wandb wiring, lm-eval flags
+# are identical to phase4/5). Idempotent via REUSE_FORGETTING=1 (default).
+_run_forgetting_matrix() {
+    local size_label="$1"; shift        # 3b | 7b
+    local model_short="$1"; shift       # qwen2.5-3b | qwen2.5-7b
+    local arms=("$@")                   # arm short names, no _<tag> suffix
+
+    FAILED_STEPS=()
+    echo "[forgetting_${size_label}] REUSE_FORGETTING=$REUSE_FORGETTING   HF_ALLOW_CODE_EVAL=$HF_ALLOW_CODE_EVAL"
+    echo "[forgetting_${size_label}] arms: ${arms[*]}"
+    echo
+
+    local arm outdir out_prefix
+    for arm in "${arms[@]}"; do
+        outdir="$(_arm_dir "$arm")"
+        out_prefix="$(_arm_prefix "$arm")"
+
+        if ! _adapter_ready "$outdir"; then
+            echo "[forgetting_${size_label}] $arm: no adapter at ${outdir}/lora_adapter — SKIP"
+            FAILED_STEPS+=("$arm.forgetting (no adapter)")
+            continue
+        fi
+
+        if [[ "$REUSE_FORGETTING" == "1" ]] && _forgetting_ready "$out_prefix"; then
+            echo "[forgetting_${size_label}] $arm: baselines/${out_prefix}_forgetting/ already has results — SKIP"
+            continue
+        fi
+
+        _safe_step "$arm.forgetting" _eval_sub_forgetting "$model_short" "${outdir}/lora_adapter" "$out_prefix"
+    done
+
+    _print_failed_summary "forgetting_${size_label}"
+}
+
+phase4_forgetting_only() {
+    log_phase "Forgetting-only — 3B LoRA arms   (tag=${RUN_TAG})"
+    require_venv
+    _run_forgetting_matrix "3b" qwen2.5-3b \
+        classic_sft_lora_3b sdft_ema_lora_3b sdft_lora_3b online_sft_lora_3b
+}
+
+phase5_forgetting_only() {
+    log_phase "Forgetting-only — 7B LoRA arms   (tag=${RUN_TAG})"
+    require_venv
+    _run_forgetting_matrix "7b" qwen2.5-7b \
+        classic_sft_lora_7b sdft_ema_lora_7b sdft_lora_7b
+}
+
 phase6_scorer_audit() {
     log_phase "Phase 6 — strict-scorer audit"
     require_venv
@@ -586,6 +649,8 @@ case "${1:-help}" in
     phase6)    phase6_scorer_audit ;;
     phase7)    phase7_summary ;;
     canary)    phase4_canary ;;
+    forgetting_3b)  phase4_forgetting_only ;;
+    forgetting_7b)  phase5_forgetting_only ;;
     verify_targets)
         require_venv
         "$PYTHON" verify_training_targets.py --row 0 --n 1
@@ -618,6 +683,12 @@ Commands:
 
   canary          classic_sft_3b + sdft_ema_3b training only, no evals
   verify_targets  side-by-side classic-SFT vs SDFT format for one row
+  forgetting_3b   run the lm-eval forgetting suite for each phase4 arm
+                  independently (hellaswag / mmlu / truthfulqa_mc2 /
+                  winogrande / humaneval / ifeval). Skips arms whose output
+                  already exists (REUSE_FORGETTING=0 to force re-eval).
+                  Wandb runs go to project ${WANDB_PROJECT}, grouped by arm.
+  forgetting_7b   same, for phase5 (7B) arms.
 
   evals     phase1 + phase2 + phase3 + phase6 + phase7
   training  phase4 + phase5 + phase6 + phase7
@@ -643,6 +714,9 @@ Env overrides (prefix the command):
   SAVE_TOTAL_LIMIT=<n>         default: 3
   EMA_ALPHA=<f>                default: 0.01 (sdft_ema teacher mixup)
   REUSE_ADAPTERS=<0|1>         default: 1 (phase4/5 skip train if adapter exists)
+  REUSE_FORGETTING=<0|1>       default: 1 (forgetting_3b/7b skip arms whose
+                               baselines/<arm>_<TAG>_forgetting/ already has
+                               results*.json)
   VLLM_MEM_EVAL=<f>            default: 0.5
   VLLM_MEM_TRAIN=<f>           default: 0.3
   VLLM_MEM=<f>                 back-compat alias for both above

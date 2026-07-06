@@ -425,7 +425,9 @@ _eval_sub_holdout() {
 
 # Invoked via `python -m lm_eval` so the module import is the requirement,
 # not the entry-point binary. peft= loads the adapter without merging.
-# humaneval also needs HF_ALLOW_CODE_EVAL=1 (exported at file top).
+# HF_ALLOW_CODE_EVAL=1 is passed via `env` on the command itself (belt-and-
+# suspenders alongside the file-top export), so humaneval works even if a
+# calling shell somehow ate the exported env var.
 _eval_sub_forgetting() {
     local model_short="$1" adapter_dir="$2" out_prefix="$3"
     local base_id
@@ -435,14 +437,15 @@ _eval_sub_forgetting() {
         wb=(--wandb_args "project=${WANDB_PROJECT},name=eval_${out_prefix}_forgetting,group=${out_prefix},job_type=eval")
     fi
     run_step "eval.${out_prefix}.forgetting" "eval_lora/${out_prefix}_forgetting.log" \
-        "$PYTHON" -m lm_eval \
-            --model hf \
-            --model_args "pretrained=${base_id},peft=${adapter_dir},dtype=bfloat16" \
-            --tasks hellaswag,mmlu,truthfulqa_mc2,winogrande,humaneval,ifeval \
-            --batch_size 8 \
-            --output_path "baselines/${out_prefix}_forgetting" \
-            --confirm_run_unsafe_code \
-            "${wb[@]}"
+        env HF_ALLOW_CODE_EVAL=1 \
+            "$PYTHON" -m lm_eval \
+                --model hf \
+                --model_args "pretrained=${base_id},peft=${adapter_dir},dtype=bfloat16" \
+                --tasks hellaswag,mmlu,truthfulqa_mc2,winogrande,humaneval,ifeval \
+                --batch_size 8 \
+                --output_path "baselines/${out_prefix}_forgetting" \
+                --confirm_run_unsafe_code \
+                "${wb[@]}"
 }
 
 # RUN_TAG is threaded through runs/ and baselines/ so tagged experiments are

@@ -284,7 +284,8 @@ def run_accuracy(cfg, adapter_override=None, use_base=False):
     out_root = Path(cfg["_derived"]["output_dir"]) / "eval"
 
     if use_base:
-        stamp_run(cfg, out_root / "base_anchor", extra={"mode": "accuracy", "target": "base"})
+        stamp_run(cfg, out_root / "base_anchor", extra={"mode": "accuracy", "target": "base",
+                                                        "data_fingerprint": D.fingerprint(cfg["data"]["dataset"])})
         res = {"base": _eval_one(base_id, None, cfg, device, dtype, out_root / "base_anchor", "base")}
         _wandb_log_eval(cfg, res)
         return res
@@ -299,7 +300,8 @@ def run_accuracy(cfg, adapter_override=None, use_base=False):
             print(f"[eval] skip {label}: {probe} missing")
             continue
         all_res[label] = _eval_one(model_id, adapter, cfg, device, dtype, out_root / label, label)
-    stamp_run(cfg, out_root, extra={"mode": "accuracy", "targets": [t[2] for t in targets]})
+    stamp_run(cfg, out_root, extra={"mode": "accuracy", "targets": [t[2] for t in targets],
+                                    "data_fingerprint": D.fingerprint(cfg["data"]["dataset"])})
     _wandb_log_eval(cfg, all_res)
     return all_res
 

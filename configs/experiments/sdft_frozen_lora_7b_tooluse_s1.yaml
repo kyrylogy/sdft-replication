@@ -1,0 +1,10 @@
+# Ablation (7B, single-task): SDFT with a FROZEN teacher — the paper's Appendix-A.3 lower
+# bound. Tells you whether the EMA teacher tracking earns its keep vs a static teacher.
+extends: [shared/model_7b.yaml]
+experiment:
+  name: sdft_frozen_lora_7b_tooluse_s1
+  notes: "Ablation: A.3 frozen-teacher lower bound (teacher never moves)."
+method: {objective: sdft, tuning: lora, teacher: frozen}
+train: {learning_rate: 1.0e-4}
+data: {dataset: tooluse, stage: 1}
+vllm: {enabled: true}

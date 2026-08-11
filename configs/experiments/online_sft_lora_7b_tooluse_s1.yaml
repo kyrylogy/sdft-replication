@@ -1,0 +1,11 @@
+# Ablation (7B, single-task): online-SFT — the TEACHER rolls out completions and the student
+# learns them under KL. Isolates on-policy sampling from distillation (answers "is the SDFT
+# effect from sampling or from the distillation target?"). Requires vLLM (teacher generation).
+extends: [shared/model_7b.yaml]
+experiment:
+  name: online_sft_lora_7b_tooluse_s1
+  notes: "Ablation: on-policy isolation. Teacher generates; student learns under KL."
+method: {objective: online_sft, tuning: lora, teacher: frozen}
+train: {learning_rate: 1.0e-4}
+data: {dataset: tooluse, stage: 1}
+vllm: {enabled: true}   # REQUIRED — HF generate always samples the student

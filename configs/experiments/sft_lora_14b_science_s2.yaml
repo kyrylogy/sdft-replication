@@ -1,0 +1,7 @@
+# Scale curve, sequential (baseline arm): continue SFT-LoRA 14B Tool Use -> Science.
+extends: [shared/model_14b.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: sft_lora_14b_science_s2
+  notes: "Tier2 sequential baseline, 14B."
+method: {objective: sft, tuning: lora, teacher: none}
+data: {init_adapter: runs/sft_lora_14b_tooluse_s1/lora_adapter}

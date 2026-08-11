@@ -1,0 +1,7 @@
+# Scale curve, sequential: continue SFT-LoRA 3B Tool Use -> Science.
+extends: [shared/model_3b.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: sft_lora_3b_science_s2
+  notes: "Tier2 sequential baseline, 3B."
+method: {objective: sft, tuning: lora, teacher: none}
+data: {init_adapter: runs/sft_lora_3b_tooluse_s1/lora_adapter}

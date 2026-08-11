@@ -1,0 +1,10 @@
+# Scale curve: SDFT-EMA-LoRA at 3B, stage 1, Tool Use (expected weakest arm — the contrast point).
+extends: [shared/model_3b.yaml]
+experiment:
+  name: sdft_ema_lora_3b_tooluse_s1
+  notes: "Tier2 scale curve. 3B LoRA SDFT-EMA."
+method: {objective: sdft, tuning: lora, teacher: ema}
+train: {learning_rate: 1.0e-4}
+sdft: {ema_alpha: 0.01}
+data: {dataset: tooluse, stage: 1}
+vllm: {enabled: true}

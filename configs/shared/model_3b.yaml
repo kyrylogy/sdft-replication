@@ -1,0 +1,7 @@
+# Shared model fragment — 3B (the low end of the scale curve; where SDFT is expected to
+# look WEAKEST — include it as the contrast that makes the scaling trend meaningful).
+# Fits one 94GB H100 with room to spare; vLLM rollouts enabled by the SDFT/online arms.
+model:
+  id: Qwen/Qwen2.5-3B-Instruct
+  scale: 3b
+  dtype: bfloat16

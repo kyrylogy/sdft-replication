@@ -284,9 +284,13 @@ def run_accuracy(cfg, adapter_override=None, use_base=False):
     out_root = Path(cfg["_derived"]["output_dir"]) / "eval"
 
     if use_base:
-        stamp_run(cfg, out_root / "base_anchor", extra={"mode": "accuracy", "target": "base",
-                                                        "data_fingerprint": D.fingerprint(cfg["data"]["dataset"])})
-        res = {"base": _eval_one(base_id, None, cfg, device, dtype, out_root / "base_anchor", "base")}
+        # Base model with the demo in-context is the CEILING, not the floor — write it to its
+        # own dir so `--base` (floor) and `--base --set eval.teacher_ceiling=true` (ceiling)
+        # never overwrite each other.
+        label = "ceiling" if cfg["eval"].get("teacher_ceiling") else "base_anchor"
+        stamp_run(cfg, out_root / label, extra={"mode": "accuracy", "target": label,
+                                                "data_fingerprint": D.fingerprint(cfg["data"]["dataset"])})
+        res = {label: _eval_one(base_id, None, cfg, device, dtype, out_root / label, label)}
         _wandb_log_eval(cfg, res)
         return res
 

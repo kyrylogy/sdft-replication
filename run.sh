@@ -16,6 +16,12 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
 PY="${PYTHON:-.venv/bin/python}"
 
+# Default the HF cache to a writable dir if the environment hasn't set one (shared
+# cluster caches are often read-only to you). Override by exporting HF_HOME yourself,
+# e.g. HF_HOME=/mnt/data/$USER/hf_cache for big models on a quota-limited home.
+export HF_HOME="${HF_HOME:-$HOME/hf_cache}"
+mkdir -p "$HF_HOME" 2>/dev/null || true
+
 if [[ $# -lt 2 ]]; then
     echo "usage: [GPU=id] [SEEDS='42 ...'] ./run.sh <train|eval> <config.yaml> [--gpu id] [--set k=v ...] [eval flags]" >&2
     exit 2

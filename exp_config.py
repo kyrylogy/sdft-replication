@@ -10,6 +10,7 @@ what ran. Nothing in train.py/evaluate.py reads raw YAML; they consume the resol
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -18,6 +19,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def _yaml_safe(obj):
+    """Coerce a record to pure JSON-native types so yaml.safe_dump can never choke on an
+    exotic object (e.g. torch's TorchVersion, a Path, a numpy scalar). default=str catches
+    anything non-serializable."""
+    return json.loads(json.dumps(obj, default=str))
 
 _REPO = Path(__file__).resolve().parent
 CONFIGS_DIR = _REPO / "configs"
@@ -228,7 +236,7 @@ def provenance() -> dict:
     libs = {}
     for m in ["torch", "transformers", "trl", "peft", "datasets", "accelerate", "vllm"]:
         try:
-            libs[m] = getattr(importlib.import_module(m), "__version__", "?")
+            libs[m] = str(getattr(importlib.import_module(m), "__version__", "?"))
         except Exception:
             libs[m] = None
     return {
@@ -251,7 +259,7 @@ def stamp_run(cfg: dict, output_dir: str | Path, extra: dict | None = None) -> P
     if extra:
         record["_run"] = extra
     out = output_dir / "resolved_config.yaml"
-    out.write_text(yaml.safe_dump(record, sort_keys=False, default_flow_style=False))
+    out.write_text(yaml.safe_dump(_yaml_safe(record), sort_keys=False, default_flow_style=False))
     print(f"[stamp] wrote run record -> {out}")
     return out
 

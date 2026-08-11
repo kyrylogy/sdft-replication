@@ -1,0 +1,18 @@
+# Tier-1 SEQUENTIAL: continue the SDFT-EMA-LoRA Tool-Use model onto Science (stage 2).
+# The forgetting measurement. init_adapter points at the stage-1 run's adapter;
+# requirement A carries that init into the teacher too, requirement B gates on Tool-Use
+# retention before the first Science gradient.
+extends: [shared/model_7b.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: sdft_ema_lora_7b_science_s2
+  notes: "Tier1 sequential. Continue Tool Use -> Science on the same adapter."
+method:
+  objective: sdft
+  tuning: lora
+  teacher: ema
+sdft:
+  ema_alpha: 0.01
+data:
+  init_adapter: runs/sdft_ema_lora_7b_tooluse_s1/lora_adapter
+vllm:
+  enabled: true

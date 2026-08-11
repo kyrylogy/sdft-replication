@@ -1,0 +1,104 @@
+# =============================================================================
+# base.yaml — defaults for EVERY run. Experiment configs override via deep-merge
+# (and may chain more parents through `extends:`). The fully-resolved config is
+# stamped into <output_dir>/resolved_config.yaml as the permanent run record.
+#
+# Fields set to `null` here are REQUIRED and must be supplied by the experiment
+# config (the loader errors if they are still null at run time). learning_rate is
+# deliberately null so LoRA (1e-4) and full-FT (~1e-5..5e-5) can never silently
+# share a rate.
+# =============================================================================
+
+experiment:
+  name: null            # REQUIRED. Names the output dir + wandb run. Keep unique per run.
+  tag: null             # optional scope suffix (e.g. seed sweep id, date). runs/<name>_<tag>/
+  notes: ""             # free text, stored verbatim in the stamp for your own tracking.
+
+model:
+  id: null              # REQUIRED. HF id or local path, e.g. Qwen/Qwen2.5-7B-Instruct
+  scale: null           # REQUIRED tracking label: "3b" | "7b" | "14b" (must match id)
+  dtype: bfloat16       # bfloat16 | float16 | float32
+
+method:                 # the experiment axes — every arm is a point in this cube
+  objective: sdft       # sft | sdft | online_sft
+  tuning: lora          # lora | full
+  teacher: ema          # ema | frozen | none   (none <=> objective=sft)
+
+lora:                   # ignored when tuning=full
+  r: 16
+  alpha: 32             # effective scale = alpha/r = 2.0
+  dropout: 0.05
+  bias: none
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+train:
+  learning_rate: null   # REQUIRED. LoRA 1e-4 ; full-FT ~1e-5..5e-5. Never share across tuning.
+  num_train_epochs: 2.0
+  warmup_ratio: 0.1
+  lr_scheduler_type: cosine
+  max_grad_norm: 1.0
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 32   # effective batch 32 (Khamis et al.)
+  max_prompt_length: 1024
+  max_completion_length: 1024
+  gradient_checkpointing: true
+  seed: 42              # single run seed; sweep multiple via `SEEDS="42 1234 2024" ./run.sh train ...`
+
+sdft:                   # ignored when objective=sft
+  kl_alpha: 0.0         # 0=forward KL (paper default) | 1=reverse | (0,1)=Jensen-Shannon
+  beta: 0.0             # kl-to-base regularizer; keep 0 so ref_model is strictly teacher-routed
+  ema_alpha: 0.01       # EMA teacher tracking rate (teacher=ema only). Drop to 0.001 if KL collapses.
+  num_loss_tokens_to_skip: 3   # OK for Qwen2.5. WRONG for thinking models (needs a </think> mask).
+  temperature: 1.0      # DOUBLE DUTY: student rollout sampling temp AND KL-target sharpness. RECORD IT.
+
+data:
+  dataset: tooluse      # tooluse | science
+  stage: 1              # 1 = fresh adapter ; 2 = continue from a stage-1 adapter (sequential)
+  init_adapter: null    # REQUIRED when stage=2 & tuning=lora: path to the stage-1 lora_adapter dir
+  init_checkpoint: null # REQUIRED when stage=2 & tuning=full: path to stage-1 full weights
+  holdout_filter: true  # tooluse: drop the 100 held-out indices from train. no-op for science.
+  max_samples: null     # cap training rows (smoke tests only)
+
+retention_gate:         # requirement B — prove the stage-1 skill actually loaded before stage-2 gradients
+  enabled: true         # active only when stage=2
+  task: tooluse         # which skill to re-check at step 0 (the stage-1 task)
+  set: holdout          # eval split for the check
+  expected_accuracy: null   # stage-1 final acc. If null, auto-read from the stage-1 eval output.
+  tolerance: 0.02       # abort if |loaded_acc - expected| > tolerance
+  structural: true      # always also check LoRA params are trainable + a B matrix is non-zero
+  allow_missing_baseline: false  # FAIL-CLOSED: with no expected acc the gate aborts. true = structural-only (not recommended)
+  # NOTE: the gate evaluates the SAME rows the stage-1 baseline used — it reuses eval.max_samples
+  # below, so the comparison is like-for-like (mismatched sample sizes would make tolerance meaningless).
+
+vllm:
+  enabled: false        # true is REQUIRED for online_sft; also speeds rollouts uniformly at scale
+  mode: colocate        # colocate | server
+  gpu_memory_utilization: 0.3
+  enable_sleep_mode: true
+  importance_sampling_correction: true
+  share_base: false     # NOT implemented (needs a DistilTrainer patch); at 14B set vllm.enabled=false instead
+
+eval:
+  engine: hf            # hf | vllm (hf REQUIRED to load a LoRA adapter)
+  scorer: strict        # strict | current  (tooluse only; strict = ordered element-wise pairing)
+  max_new_tokens: 2048
+  temperature: 0.0      # greedy
+  max_samples: null     # cap rows per eval set (null = all). Also the row budget the retention gate reuses.
+  sets: [eval_data, holdout]   # tooluse: [eval_data, holdout] ; science: [eval_data]
+  teacher_ceiling: false       # base + in-context demo (the distillation target ceiling)
+  checkpoint_curve: true       # evaluate every saved checkpoint, not just the last (forgetting curve)
+  forgetting:                  # general-capability retention (lm-eval); base anchor MUST use same settings
+    enabled: false
+    tasks: [hellaswag, mmlu, truthfulqa_mc2, winogrande, humaneval, ifeval]
+    num_fewshot: null          # identical for base anchor and every arm, or deltas are meaningless
+    batch_size: 8
+    report: per_task           # never a single average — per-task, base beside each
+
+runtime:
+  output_root: runs     # runs/<name>[_<tag>]/
+  gpu: null             # CUDA device id(s), e.g. "0" or "0,1". Usually set by run.sh --gpu / GPU=.
+  save_steps: 50        # checkpoint cadence (also the granularity of the forgetting curve)
+  save_total_limit: 3   # auto-overridden to keep ALL checkpoints when eval.checkpoint_curve=true (LoRA)
+  report_to: wandb      # wandb | tensorboard | none
+  wandb_project: sdft-replication
+  enable_input_require_grads: true   # defensive: PEFT + grad-checkpointing + custom Trainer

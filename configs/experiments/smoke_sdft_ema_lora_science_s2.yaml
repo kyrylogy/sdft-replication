@@ -1,0 +1,12 @@
+# SMOKE: sequential continuation Tool Use -> Science. Exercises requirement A (teacher
+# carries stage-1 init) and requirement B (retention gate). Run AFTER:
+#   ./run.sh train configs/experiments/smoke_sdft_ema_lora_tooluse_s1.yaml
+#   ./run.sh eval  configs/experiments/smoke_sdft_ema_lora_tooluse_s1.yaml   # writes the gate baseline
+extends: [shared/smoke.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: smoke_sdft_ema_lora_science_s2
+  notes: "tiny end-to-end smoke — stage-2 continuation + retention gate"
+method: {objective: sdft, tuning: lora, teacher: ema}
+sdft: {ema_alpha: 0.01}
+data:
+  init_adapter: runs/smoke_sdft_ema_lora_tooluse_s1/lora_adapter

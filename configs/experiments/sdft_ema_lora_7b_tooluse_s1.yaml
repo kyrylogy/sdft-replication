@@ -1,0 +1,18 @@
+# Tier-1 HEADLINE: SDFT-EMA-LoRA, Tool Use, stage 1 (the fresh-adapter run).
+extends: [shared/model_7b.yaml]
+experiment:
+  name: sdft_ema_lora_7b_tooluse_s1
+  notes: "Tier1 headline. SDFT with EMA-tracked teacher adapter, forward KL, on-policy."
+method:
+  objective: sdft
+  tuning: lora
+  teacher: ema
+train:
+  learning_rate: 1.0e-4
+sdft:
+  ema_alpha: 0.01              # drop to 0.001 if teacher-student KL collapses in first ~50 steps
+data:
+  dataset: tooluse
+  stage: 1
+vllm:
+  enabled: true               # uniform vLLM rollouts at 7B (student rollouts)

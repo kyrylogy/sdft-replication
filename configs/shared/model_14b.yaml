@@ -1,0 +1,14 @@
+# Shared model fragment — 14B (LoRA only; full-FT 14B ~250GB exceeds the budget and is
+# rejected by the validator). Aim these at a big GPU via `GPU=<big_card> ./run.sh ...`.
+#
+# vLLM is OFF on purpose: at 14B a colocated vLLM weight copy on top of the student base
+# and teacher base (~3x28GB) overflows one 80GB card. HF-generate rollouts fit ~60GB, the
+# same tradeoff run_cluster.sh already made for 7B — slower rollouts, robust on one card.
+# (Want vLLM speed at 14B? That needs the teacher on a 2nd card or a DistilTrainer base-share
+# patch — see the loader warning. Not wired.)
+model:
+  id: Qwen/Qwen2.5-14B-Instruct
+  scale: 14b
+  dtype: bfloat16
+vllm:
+  enabled: false

@@ -1,0 +1,9 @@
+# SMOKE: SDFT-EMA-LoRA, Tool Use, stage 1. Exercises teacher + LoRAEMACallback + KL loss.
+extends: [shared/smoke.yaml]
+experiment:
+  name: smoke_sdft_ema_lora_tooluse_s1
+  notes: "tiny end-to-end smoke — SDFT-EMA path (student+teacher both 0.5B)"
+method: {objective: sdft, tuning: lora, teacher: ema}
+sdft: {ema_alpha: 0.01}
+data: {dataset: tooluse, stage: 1}
+eval: {sets: [holdout]}

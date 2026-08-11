@@ -16,3 +16,5 @@ bsub_outputs/
 
 # HF datasets .map() caches written next to arrow datasets
 data/**/cache-*.arrow
+# config-driven run outputs (adapters/checkpoints/eval); records live in resolved_config.yaml
+runs/

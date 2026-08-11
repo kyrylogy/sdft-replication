@@ -17,8 +17,7 @@ RUN_TAG="${RUN_TAG:-$(date +%Y%m%d)}"
 LOG_DIR="logs/cluster_${RUN_TAG}"
 WALL_TIMES_CSV="${LOG_DIR}/wall_times.csv"
 # LOG_DIR is created lazily by run_step (via mkdir -p on the log's parent), so
-# a bare `./run_cluster.sh help` invocation doesn't leave an empty dir behind.
-
+# a bare `./run_cluster.sh help` invocation doesn't leave an empty dir behi
 VENV_DIR="${VENV_DIR:-.venv}"
 PYTHON="${VENV_DIR}/bin/python"
 

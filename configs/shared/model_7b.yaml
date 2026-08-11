@@ -1,0 +1,4 @@
+# Shared model fragment — 7B (the primary scale). Extend from experiment configs.
+model:
+  id: Qwen/Qwen2.5-7B-Instruct
+  scale: 7b

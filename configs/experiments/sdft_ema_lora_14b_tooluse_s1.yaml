@@ -1,0 +1,17 @@
+# Tier-2 scale curve: SDFT-EMA-LoRA at 14B — where SDFT should look best (a bigger teacher
+# does in-context learning better, so the distillation target is better). Stage 1, Tool Use.
+extends: [shared/model_14b.yaml]
+experiment:
+  name: sdft_ema_lora_14b_tooluse_s1
+  notes: "Tier2 scale curve. 14B LoRA, vLLM off (HF-generate rollouts), one 80GB card."
+method:
+  objective: sdft
+  tuning: lora
+  teacher: ema
+train:
+  learning_rate: 1.0e-4
+sdft:
+  ema_alpha: 0.01
+data:
+  dataset: tooluse
+  stage: 1

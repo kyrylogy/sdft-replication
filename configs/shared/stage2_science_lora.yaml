@@ -1,0 +1,20 @@
+# Shared stage-2 (Tool Use -> Science) config for LoRA arms.
+# REQUIREMENT C: every stage-2 Science LoRA arm `extends` this file, so the stage-2
+# learning rate / epochs / warmup are IDENTICAL across SFT and SDFT by construction —
+# not by remembering to match them. Change the stage-2 schedule in ONE place here.
+data:
+  dataset: science
+  stage: 2
+  holdout_filter: false        # science has no train-carve; eval_data is the held-out split
+train:
+  learning_rate: 1.0e-4        # LoRA stage-2 rate (full-FT arms override in their own file)
+  num_train_epochs: 2.0
+  warmup_ratio: 0.1
+  lr_scheduler_type: cosine
+retention_gate:
+  enabled: true
+  task: tooluse                # re-check the stage-1 skill before any Science gradient
+  set: holdout
+  tolerance: 0.02
+eval:
+  sets: [eval_data]            # science eval set

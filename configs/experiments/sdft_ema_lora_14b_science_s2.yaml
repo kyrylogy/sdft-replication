@@ -1,0 +1,15 @@
+# Tier-2 sequential at 14B: continue the SDFT-EMA-LoRA Tool-Use model onto Science.
+# vLLM stays off (inherited from model_14b). Run stage-1 train + eval first so the gate
+# has its baseline.
+extends: [shared/model_14b.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: sdft_ema_lora_14b_science_s2
+  notes: "Tier2 sequential. 14B continue Tool Use -> Science, same adapter."
+method:
+  objective: sdft
+  tuning: lora
+  teacher: ema
+sdft:
+  ema_alpha: 0.01
+data:
+  init_adapter: runs/sdft_ema_lora_14b_tooluse_s1/lora_adapter

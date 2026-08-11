@@ -1,0 +1,26 @@
+# Shared SMOKE fragment — tiny model + tiny data so the whole train->eval->gate loop
+# runs end-to-end on a laptop (CPU/MPS) in minutes, before you touch a real GPU.
+# Everything here is deliberately small; do NOT extend this for real runs.
+model:
+  id: Qwen/Qwen2.5-0.5B-Instruct   # ~1GB, same architecture/chat template as the 3B/7B
+  scale: 0.5b
+  dtype: float32                    # CPU/MPS-safe (bf16 unsupported on CPU, flaky on MPS)
+train:
+  learning_rate: 1.0e-4
+  num_train_epochs: 1.0
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 1
+  max_prompt_length: 256
+  max_completion_length: 64
+data:
+  max_samples: 8                    # train on 8 rows
+vllm:
+  enabled: false                    # CPU/MPS has no vLLM
+runtime:
+  save_steps: 4
+  save_total_limit: 2
+  report_to: none
+eval:
+  max_new_tokens: 64
+  max_samples: 4                    # eval + retention gate both use these 4 rows (kept consistent)
+  checkpoint_curve: false           # keep the smoke fast

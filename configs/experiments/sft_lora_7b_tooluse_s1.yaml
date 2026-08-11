@@ -1,0 +1,14 @@
+# Tier-1 BASELINE: classic offline SFT-LoRA, Tool Use, stage 1.
+extends: [shared/model_7b.yaml]
+experiment:
+  name: sft_lora_7b_tooluse_s1
+  notes: "Tier1 baseline. Off-policy cross-entropy on golden_response, response-only masked."
+method:
+  objective: sft
+  tuning: lora
+  teacher: none
+train:
+  learning_rate: 1.0e-4
+data:
+  dataset: tooluse
+  stage: 1

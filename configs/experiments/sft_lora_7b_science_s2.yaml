@@ -1,0 +1,12 @@
+# Tier-1 SEQUENTIAL (baseline arm): continue the SFT-LoRA Tool-Use model onto Science.
+# Shares stage2_science_lora.yaml with the SDFT arm, so the stage-2 schedule is identical.
+extends: [shared/model_7b.yaml, shared/stage2_science_lora.yaml]
+experiment:
+  name: sft_lora_7b_science_s2
+  notes: "Tier1 sequential baseline. Continue SFT Tool Use -> Science on the same adapter."
+method:
+  objective: sft
+  tuning: lora
+  teacher: none
+data:
+  init_adapter: runs/sft_lora_7b_tooluse_s1/lora_adapter

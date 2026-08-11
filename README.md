@@ -1,5 +1,11 @@
 # Self-Distillation Fine-Tuning
 
+> **This fork uses a config-driven experiment harness — see [`HARNESS.md`](HARNESS.md).**
+> Every run is one YAML (`GPU=0 ./run.sh train configs/experiments/<arm>.yaml`) with a stamped,
+> reproducible record. The per-script pipeline this README documents is archived in [`legacy/`](legacy/)
+> and kept for reference. New experiments (SDFT/SFT × LoRA/full × 3B/7B/14B × single/sequential) go
+> through the harness.
+
 This is TRL-based code for reproducing the On-Policy Self-Distillation algorithm from the paper "Self-Distillation Enables Continual Learning" - [https://arxiv.org/abs/2601.19897](https://arxiv.org/abs/2601.19897).
 
  All experiments can be run with a single H200 GPU. Other setups may require refactoring and/or changing model sizes.

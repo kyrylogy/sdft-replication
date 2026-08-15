@@ -11,6 +11,12 @@ Usage (on the machine where wandb is logged in):
 import argparse
 import json
 import os
+import sys
+
+# The repo root contains a local `wandb/` log directory that shadows the
+# installed wandb package — drop the script's own dir from sys.path first.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path = [p for p in sys.path if os.path.abspath(p or os.getcwd()) != _HERE]
 
 import wandb
 

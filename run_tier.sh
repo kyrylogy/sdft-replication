@@ -35,7 +35,9 @@ HEADLINE=(sft_lora sdft_ema_lora)
 ABLATION=(); [ "$SCALE" = "7b" ] && ABLATION=(sdft_frozen_lora online_sft_lora)
 
 FAILED=()
-r() { echo "  + GPU=$GPU ./run.sh $*"; if ! GPU="$GPU" ./run.sh "$@"; then FAILED+=("$*"); echo "  [FAIL] $*"; fi; }
+# SEEDS='' : the tier driver seeds each call itself via --set; run.sh's own SEEDS loop
+# must not also fire (it re-runs the same training once per seed in $SEEDS).
+r() { echo "  + GPU=$GPU ./run.sh $*"; if ! GPU="$GPU" SEEDS='' ./run.sh "$@"; then FAILED+=("$*"); echo "  [FAIL] $*"; fi; }
 seedset() { echo "--set train.seed=$1 --set experiment.tag=seed$1"; }
 
 gpu_guard() {

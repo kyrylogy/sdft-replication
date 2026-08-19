@@ -291,6 +291,10 @@ def run_accuracy(cfg, adapter_override=None, use_base=False):
         label = "ceiling" if cfg["eval"].get("teacher_ceiling") else "base_anchor"
         stamp_run(cfg, out_root / label, extra={"mode": "accuracy", "target": label,
                                                 "data_fingerprint": D.fingerprint(cfg["data"]["dataset"])})
+        # --base runs never go through train.py, so nothing else stamps the run's top level;
+        # collect_results.load_runs() discovers runs via runs/*/resolved_config.yaml (one level
+        # deep) and would never see this run dir without it.
+        stamp_run(cfg, out_root.parent, extra={"mode": "accuracy", "target": label})
         res = {label: _eval_one(base_id, None, cfg, device, dtype, out_root / label, label)}
         _wandb_log_eval(cfg, res)
         return res
@@ -343,6 +347,9 @@ def run_forgetting(cfg, adapter_override=None, use_base=False):
     env = {**os.environ, "HF_ALLOW_CODE_EVAL": "1"}
     stamp_run(cfg, out_dir, extra={"mode": "forgetting", "target": "base" if use_base else tuning,
                                    "lm_eval_cmd": " ".join(cmd), "num_fewshot": fg.get("num_fewshot")})
+    if use_base:
+        # same reason as run_accuracy's use_base branch: no train.py stamp exists for this run dir.
+        stamp_run(cfg, run_dir, extra={"mode": "forgetting", "target": "base"})
     print(f"[forgetting] {' '.join(cmd)}")
     subprocess.run(cmd, env=env, check=True)
 

@@ -17,6 +17,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 uv pip uninstall --python .venv/bin/python deepspeed          # not needed; crashes w/o CUDA_HOME
 uv pip install --python .venv/bin/python \
   "git+https://github.com/EleutherAI/lm-evaluation-harness@03c44adc0586f88bb343a74da1a1c602103536dd"  # forgetting suite
+uv pip install --python .venv/bin/python langdetect immutabledict   # ifeval task needs these; not pulled in above
 deactivate
 ```
 

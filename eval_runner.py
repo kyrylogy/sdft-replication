@@ -25,6 +25,7 @@ import math
 import os
 import re
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -331,7 +332,7 @@ def run_forgetting(cfg, adapter_override=None, use_base=False):
     else:  # full: point pretrained at the saved full model
         model_args = [f"pretrained={adapter_override or str(run_dir / 'final_model')}", "dtype=bfloat16"]
 
-    cmd = ["python", "-m", "lm_eval", "--model", "hf",
+    cmd = [sys.executable, "-m", "lm_eval", "--model", "hf",
            "--model_args", ",".join(model_args),
            "--tasks", ",".join(fg["tasks"]),
            "--batch_size", str(fg["batch_size"]),

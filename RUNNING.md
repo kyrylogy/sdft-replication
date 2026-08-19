@@ -34,6 +34,16 @@ Verify:
 .venv/bin/python -c "import torch,transformers,trl,peft,datasets,yaml,pandas,matplotlib,wandb; print('deps OK')"
 ```
 
+Run the test suite before pushing config/driver changes — no GPU, seconds not hours, and it
+catches exactly the class of bug that's burned real GPU time here before (wrong subprocess
+interpreter, silently-stale resumability directories, run discovery gaps):
+```bash
+.venv/bin/python -m pytest tests/ -v      # eval_runner.py + collect_results.py
+bash tests/test_run_tier.sh               # run_tier.sh's skip/resume logic
+```
+`tests/test_collect_results.py` only needs pyyaml + stdlib and also runs fine on a laptop
+without the full cluster env: `uv run --with pytest --with pyyaml pytest tests/test_collect_results.py`.
+
 ---
 
 ## 1. tmux — survive disconnection

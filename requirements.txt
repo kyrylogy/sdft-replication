@@ -14,6 +14,7 @@ matplotlib==3.10.7
 flashinfer-python==0.5.3
 wandb>=0.22.3  # 0.22.2 rejects the new 86-char API keys; see huggingface/lerobot#2762
 pandas==2.3.3
+pytest==8.4.2  # tests/ -- no GPU needed, run before committing: .venv/bin/python -m pytest tests/
 # deepspeed is NOT needed for single-GPU LoRA (the whole current matrix). It imports at
 # runtime via accelerate and crashes when CUDA_HOME is unset (common on shared boxes:
 # "MissingCUDAException: CUDA_HOME does not exist"). Only re-add it — with the CUDA toolkit

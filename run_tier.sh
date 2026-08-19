@@ -14,7 +14,9 @@
 # Before running: export HF_HOME=$HOME/hf_cache ; export WANDB_API_KEY=<key>  (see notes)
 
 set -uo pipefail                     # NOT -e: one failed arm must not abort the whole tier
-cd "$(dirname "$0")"
+# BASH_SOURCE (not $0) so this cd resolves correctly whether run directly or sourced
+# (tests/test_run_tier.sh sources this to unit-test fg_done()/r() without launching GPU jobs).
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
 GPU="${GPU:-3}"
 SCALE="${SCALE:-7b}"
@@ -23,11 +25,6 @@ MIN_FREE_MIB="${MIN_FREE_MIB:-40000}"
 MODE="${1:-run}"
 E=configs/experiments
 FG=(--mode forgetting --set eval.forgetting.enabled=true)
-
-mkdir -p logs
-LOG="logs/tier_${SCALE}_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -a "$LOG") 2>&1        # everything below is logged AND shown
-echo "[tier] SCALE=$SCALE GPU=$GPU SEEDS='$SEEDS' log=$LOG"
 
 # Headline arms run at every seed with a stage-2 continuation; ablations (7B only) are
 # single-seed, single-stage.
@@ -50,12 +47,17 @@ gpu_guard() {
   echo "[tier] GPU $GPU free=${free} MiB — ok"
 }
 
+# forgetting evals mkdir their output dir (and stamp a resolved_config.yaml) well before the
+# ~75min lm_eval subprocess finishes; a crash anywhere in between leaves a directory that
+# LOOKS done to a plain `-d` test forever. Require the actual results file instead.
+fg_done() { [ -n "$(find "$1" -name 'results*.json' 2>/dev/null | head -1)" ]; }
+
 anchors() {   # once per scale; live in the untagged sft dir. collect_results keys them by scale.
   local base="$E/sft_lora_${SCALE}_tooluse_s1.yaml" ad="runs/sft_lora_${SCALE}_tooluse_s1"
   echo "[tier] === anchors ($SCALE) ==="
   [ -d "$ad/eval/base_anchor" ]     || r eval "$base" --base
   [ -d "$ad/eval/ceiling" ]         || r eval "$base" --base --set eval.teacher_ceiling=true --set 'eval.sets=[holdout]'
-  [ -d "$ad/eval/forgetting_base" ] || r eval "$base" --base "${FG[@]}"
+  fg_done "$ad/eval/forgetting_base" || r eval "$base" --base "${FG[@]}"
 }
 
 chain() {   # chain <arm> <seed>
@@ -66,7 +68,7 @@ chain() {   # chain <arm> <seed>
   # --- stage 1: train, accuracy eval, forgetting ---
   [ -f "$s1d/lora_adapter/adapter_config.json" ] || r train "$s1" $tag
   [ -d "$s1d/eval/final" ]        || r eval "$s1" $tag
-  [ -d "$s1d/eval/forgetting" ]   || r eval "$s1" $tag "${FG[@]}"
+  fg_done "$s1d/eval/forgetting"  || r eval "$s1" $tag "${FG[@]}"
   # --- stage 2 (headline arms only; ablations have no _science_s2 config) ---
   [ -f "$s2" ] || return 0
   [ -f "$s2d/lora_adapter/adapter_config.json" ] || r train "$s2" $tag --set data.init_adapter="$s1d/lora_adapter"
@@ -100,8 +102,17 @@ run_all() {
   for f in "${FAILED[@]}"; do echo "   - $f"; done
 }
 
-case "$MODE" in
-  preflight) preflight ;;
-  run)       run_all ;;
-  *) echo "usage: GPU=<id> SCALE=<3b|7b|14b> SEEDS='42 ...' $0 {preflight|run}" >&2; exit 2 ;;
-esac
+# Guarded so tests can `source run_tier.sh` to reach fg_done()/r()/etc. for unit testing
+# without mkdir-ing logs/, redirecting this shell's stdout, or launching a real GPU run.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  mkdir -p logs
+  LOG="logs/tier_${SCALE}_$(date +%Y%m%d_%H%M%S).log"
+  exec > >(tee -a "$LOG") 2>&1        # everything below is logged AND shown
+  echo "[tier] SCALE=$SCALE GPU=$GPU SEEDS='$SEEDS' log=$LOG"
+
+  case "$MODE" in
+    preflight) preflight ;;
+    run)       run_all ;;
+    *) echo "usage: GPU=<id> SCALE=<3b|7b|14b> SEEDS='42 ...' $0 {preflight|run}" >&2; exit 2 ;;
+  esac
+fi

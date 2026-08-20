@@ -43,17 +43,37 @@ def load_tables(adir):
 # Data prep (pure pandas — testable without matplotlib)
 # ---------------------------------------------------------------------------
 def prep_forgetting_curve(t, eval_dataset="tooluse", eval_set="holdout"):
+    """Stage-2 ONLY: skill-1 retention while skill-2 is being learned.
+
+    The stage filter is load-bearing. Without it this mask also matches every
+    stage-1 run's own acquisition curve on the same task/set (8 extra curves at
+    7B), which then get drawn on an axis labelled "Stage-2 training step" —
+    stage-1 runs to step 248 where stage-2 ends at 168, so the contamination
+    reads as a late recovery that never happened.
+
+    step 0 is the stage-1 final accuracy (the value BWT subtracts), so the
+    curve starts at the level the adapter actually carried into stage 2 rather
+    than at its first *saved* checkpoint 50 steps in.
+    """
     df = t["results_long"]
     if df.empty:
         return {}
     m = df[(df["metric"] == "accuracy") & (df["eval_dataset"] == eval_dataset)
-           & (df["eval_set"] == eval_set) & (df["checkpoint"].astype(str).str.match(r"step\d+"))]
+           & (df["eval_set"] == eval_set) & (df["stage"] == 2)
+           & (df["checkpoint"].astype(str).str.match(r"step\d+"))]
+    ret = t.get("retention")
+    anchor = {}
+    if ret is not None and not ret.empty and "stage1_acc" in ret:
+        anchor = dict(zip(ret["arm"], ret["stage1_acc"]))
     out = {}
     for run, g in m.groupby("run"):
         g = g.copy()
         g["step"] = g["checkpoint"].str.slice(4).astype(int)
         g = g.sort_values("step")
-        out[run] = (g["step"].tolist(), g["value"].tolist(),
+        steps, accs = g["step"].tolist(), g["value"].tolist()
+        if run in anchor:
+            steps, accs = [0] + steps, [anchor[run]] + accs
+        out[run] = (steps, accs,
                     _arm_of(t, g["objective"].iloc[0], g.get("teacher").iloc[0] if "teacher" in g else None))
     return out
 
@@ -139,10 +159,13 @@ def fig_forgetting_curve(t, out):
     if not data:
         return False
     fig, ax = _new_ax()
+    seen = set()   # one legend entry per arm, not one per run
     for run, (steps, accs, ak) in data.items():
         s = ARM_STYLE[ak]
-        ax.plot(steps, accs, color=s["color"], marker=s["marker"], ls=s["ls"], lw=2, ms=6, label=s["label"], zorder=3)
-    ax.set_xlabel("Stage-2 (Science) training step")
+        ax.plot(steps, accs, color=s["color"], marker=s["marker"], ls=s["ls"], lw=2, ms=6,
+                label=s["label"] if ak not in seen else None, zorder=3)
+        seen.add(ak)
+    ax.set_xlabel("Stage-2 (Science) training step   (0 = stage-1 final)")
     ax.set_ylabel("Tool-Use retention (holdout acc)")
     ax.set_title("Skill-1 retention during skill-2 learning")
     ax.legend(frameon=False)

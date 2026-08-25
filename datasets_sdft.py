@@ -70,6 +70,8 @@ def fingerprint(dataset: str) -> dict:
     splits. Stamped into each run's record so a silently regenerated dataset is
     detectable across runs (reproducibility guard). Hashing arrow bytes is fast and
     deterministic — no need to materialize rows."""
+    if dataset == "joint":  # joint-training ceiling: stamp both constituents
+        return {d: fingerprint(d) for d in ("tooluse", "science")}
     spec = _require(dataset)
     roles = [("train", spec["train"])] + [(f"eval:{k}", v) for k, v in spec["eval"].items()]
     out = {}
@@ -158,7 +160,23 @@ def load_train(dataset: str, objective: str, seed: int, tokenizer=None,
 
     objective in {sdft, online_sft} -> {prompt, teacher_prompt} columns.
     objective == sft                 -> {text} column (needs tokenizer).
+
+    dataset == "joint" -> tooluse + science concatenated then shuffled together
+    (the joint-training / multi-task ceiling for the continual-learning tables).
+    Each constituent is loaded through this same function, so the tooluse holdout
+    carve-out applies exactly as it does in the sequential arms.
     """
+    if dataset == "joint":
+        from datasets import concatenate_datasets
+        parts = [load_train(d, objective, seed, tokenizer=tokenizer,
+                            holdout_filter=holdout_filter, max_samples=None)
+                 for d in ("tooluse", "science")]
+        formatted = concatenate_datasets(parts).shuffle(seed=seed)
+        print(f"[data] joint: {' + '.join(str(len(p)) for p in parts)} = {len(formatted)} rows")
+        if max_samples is not None:
+            formatted = formatted.select(range(min(max_samples, len(formatted))))
+            print(f"[data] truncated to max_samples={max_samples} -> {len(formatted)} rows")
+        return formatted
     spec = _require(dataset)
     raw = load_from_disk(str(spec["train"]))
     print(f"[data] {dataset}/train: {len(raw)} raw rows")

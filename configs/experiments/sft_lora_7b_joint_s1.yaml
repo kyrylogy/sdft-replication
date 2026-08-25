@@ -1,0 +1,21 @@
+# Joint-training ceiling (continual-learning upper bound): one SFT-LoRA run on
+# Tool-Use + Science CONCATENATED and shuffled together. Single seed — this is a
+# reference line for the ACC / gap-closed tables, not an arm of the method matrix.
+# Evaluate with data.dataset overrides (the run itself has no eval sets of its own):
+#   ./run.sh eval <this> --set experiment.tag=seed42 --set data.dataset=tooluse
+#   ./run.sh eval <this> --set experiment.tag=seed42 --set data.dataset=science --set 'eval.sets=[eval_data]'
+extends: [shared/model_7b.yaml]
+experiment:
+  name: sft_lora_7b_joint_s1
+  notes: "Joint (multi-task) SFT ceiling: tooluse+science concatenated, 1 seed. CL upper bound."
+method:
+  objective: sft
+  tuning: lora
+  teacher: none
+train:
+  learning_rate: 1.0e-4
+data:
+  dataset: joint
+  stage: 1
+eval:
+  checkpoint_curve: false   # reference line: final adapter only, no forgetting curve

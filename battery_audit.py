@@ -24,7 +24,9 @@ REPO = Path(__file__).resolve().parent
 
 def audit(root="runs"):
     rows = []
-    for rj in sorted((REPO / root).glob("*/eval/forgetting*/results*.json")):
+    # lm-eval nests results one level below --output_path, in a dir named after model_args
+    # (the sanitized adapter path — itself useful provenance for which adapter was loaded).
+    for rj in sorted((REPO / root).glob("*/eval/forgetting*/**/results*.json")):
         run = rj.parts[rj.parts.index(root) + 1]
         label = "base" if "forgetting_base" in str(rj) else "arm"
         try:

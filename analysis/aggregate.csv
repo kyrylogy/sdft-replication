@@ -1,0 +1,15 @@
+arm,scale,dataset,stage,eval_set,n_seeds,mean_acc,std_acc
+online_sft,7b,tooluse,1,tooluse/eval_data,1,0.5773,0.0
+online_sft,7b,tooluse,1,tooluse/holdout,1,0.33,0.0
+sdft_ema,7b,science,2,science/eval_data,3,0.5516,0.0131
+sdft_ema,7b,science,2,tooluse/eval_data,3,0.6151,0.0175
+sdft_ema,7b,science,2,tooluse/holdout,3,0.3067,0.0094
+sdft_ema,7b,tooluse,1,tooluse/eval_data,3,0.6838,0.0194
+sdft_ema,7b,tooluse,1,tooluse/holdout,3,0.3167,0.0047
+sdft_frozen,7b,tooluse,1,tooluse/eval_data,1,0.6804,0.0
+sdft_frozen,7b,tooluse,1,tooluse/holdout,1,0.32,0.0
+sft,7b,science,2,science/eval_data,6,0.571,0.017
+sft,7b,science,2,tooluse/eval_data,6,0.6237,0.0314
+sft,7b,science,2,tooluse/holdout,6,0.3367,0.0149
+sft,7b,tooluse,1,tooluse/eval_data,6,0.6048,0.0194
+sft,7b,tooluse,1,tooluse/holdout,6,0.36,0.0245

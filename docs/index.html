@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDFT under LoRA</title>
+<meta name="description" content="A controlled replication of Self-Distillation Fine-Tuning (SDFT) under LoRA on Qwen2.5-7B-Instruct: what holds up and what doesn't.">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fcfcfb; --fg: #1a1a19; --muted: #5f5e5a; --line: #e1e0d9; --soft: #f3f2ee; --link: #0b5cad;
+  --sft: #0072b2; --acq: #56b4e9; --sdft: #d55e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --fg: #ecebe7; --muted: #a9a8a2; --line: #34342f; --soft: #1f1f1d; --link: #7fb6ff; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+       font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+a { color: var(--link); }
+h1 { font-size: 1.85rem; line-height: 1.25; margin: 0 0 .5rem; letter-spacing: -.01em; }
+h2 { font-size: 1.2rem; line-height: 1.35; margin: 2.6rem 0 .5rem; }
+p { margin: .6rem 0; }
+.sub { color: var(--muted); margin: 0 0 1.1rem; }
+.links { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1.8rem; padding: 0; list-style: none; }
+.links a { display: inline-block; padding: .3rem .85rem; border: 1px solid var(--line); border-radius: 999px;
+           color: var(--fg); text-decoration: none; font-size: .92rem; }
+.links a:hover { background: var(--soft); }
+.tldr { background: var(--soft); border-radius: 8px; padding: .9rem 1.1rem; }
+.tldr p { margin: .35rem 0; }
+ul { padding-left: 1.2rem; }
+li { margin: .35rem 0; }
+.table-wrap { overflow-x: auto; margin: .8rem 0 .3rem; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+th, td { padding: .42rem .6rem; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th { font-weight: 600; color: var(--muted); }
+th:first-child, td:first-child { text-align: left; }
+td { font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: .88rem; margin-top: .2rem; }
+.sw { display: inline-block; width: .72em; height: .72em; border-radius: 2px; margin-right: .45em; }
+.sw.sft { background: var(--sft); } .sw.acq { background: var(--acq); } .sw.sdft { background: var(--sdft); }
+figure { margin: 1.3rem 0; }
+figure img { display: block; width: 100%; height: auto; background: #fff; border-radius: 8px; padding: 6px; }
+figcaption { color: var(--muted); font-size: .88rem; margin-top: .45rem; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em;
+       background: var(--soft); padding: .08em .3em; border-radius: 4px; }
+pre { background: var(--soft); padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; font-size: .86rem; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+footer { color: var(--muted); font-size: .85rem; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <h1>Self-Distillation Fine-Tuning under LoRA</h1>
+  <p class="sub">A controlled replication of SDFT's forgetting claims on Qwen2.5-7B-Instruct with rank-16 LoRA: two tasks learned in sequence, three seeds.</p>
+  <ul class="links">
+    <li><a href="https://github.com/kyrylogy/sdft-replication">Code</a></li>
+    <li><a href="https://github.com/kyrylogy/sdft-replication/blob/HEAD/analysis/SUMMARY.md">All results</a></li>
+    <li><a href="https://github.com/kyrylogy/sdft-replication/blob/HEAD/RESULTS.md">Results index</a></li>
+    <li><a href="https://arxiv.org/abs/2601.19897">Original SDFT paper</a></li>
+  </ul>
+</header>
+
+<section class="tldr" aria-label="Summary">
+  <p><strong>Task forgetting.</strong> On APIs seen in training, SDFT loses less first-task accuracy than SFT while learning the second task (−1.0 vs −3.3 percentage points), but the gap is not significant (p = 0.30) and SDFT had also learned less. Both lose about 11% of the items they answered correctly after stage 1, and SFT stopped early at a similar accuracy loses about as much (−1.3 pp). On APIs never seen in training the order reverses: SDFT −6.9 pp, SFT +2.7 pp.</p>
+  <p><strong>General capabilities.</strong> After the first task SDFT protects them, on every seed: SFT costs 10.4 pp of instruction following (IFEval) and 7.8 pp of truthfulness (TruthfulQA), SDFT 6.8 and 1.5 pp. After the second task the protection is gone: SDFT ends at −14.7 pp on IFEval against −9.1 pp for SFT, and its TruthfulQA edge shrinks to 1 pp. SDFT needs 3.2× the training compute.</p>
+</section>
+
+<h2>Setup</h2>
+<ul>
+  <li><strong>Model.</strong> Qwen2.5-7B-Instruct with LoRA (rank 16, α 32, all attention and MLP projections). Learning rate 1e-4 (cosine), 2 epochs per stage, batch 32. Seeds 42, 1234, 2024.</li>
+  <li><strong>Protocol.</strong> Stage 1 trains Tool-Use (3,946 examples); stage 2 continues the same adapter on Science (2,674 examples).</li>
+  <li><strong>Arms.</strong> <span class="sw sft"></span>SFT: cross-entropy on the dataset's answers. <span class="sw sdft"></span>SDFT-EMA: the model generates its own answers and is trained (forward KL) to match a teacher that sees a demonstration in context; the teacher is an EMA of the model. <span class="sw acq"></span>SFT-acq50, the accuracy-matched control: SFT's earliest saved checkpoint (step 50 of 248, 0.4 epochs), the one closest to SDFT's stage-1 holdout accuracy (0.34 vs 0.32), then trained on stage 2 like the others.</li>
+  <li><strong>Retention</strong> is measured on two Tool-Use sets: <em>holdout</em> (100 items whose APIs all appear in training) and <em>eval_data</em> (97 items on 10 APIs never seen in training). Strict exact-match scoring, greedy decoding.</li>
+  <li><strong>General capability</strong> is measured with six lm-eval tasks (0-shot, no chat template) after each stage, compared with the base model.</li>
+</ul>
+
+<h2>1. The retention gap has the paper's sign but is not significant</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tool-Use holdout</th><th>After stage 1</th><th>After stage 2</th><th>BWT</th><th>Forgot</th><th>Gained</th></tr></thead>
+  <tbody>
+    <tr><td><span class="sw sft"></span>SFT</td><td>0.383</td><td>0.350</td><td>−3.3 pp</td><td>11.3% (13/115)</td><td>1.6% (3/185)</td></tr>
+    <tr><td><span class="sw acq"></span>SFT-acq50</td><td>0.337</td><td>0.323</td><td>−1.3 pp</td><td>12.9% (13/101)</td><td>4.5% (9/199)</td></tr>
+    <tr><td><span class="sw sdft"></span>SDFT-EMA</td><td>0.317</td><td>0.307</td><td>−1.0 pp</td><td>10.5% (10/95)</td><td>3.4% (7/205)</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Means over 3 seeds. BWT (backward transfer) = accuracy after stage 2 − accuracy after stage 1. Forgot: share of items right after stage 1 and wrong after stage 2; gained: the reverse. Both are pooled over seeds.</p>
+<ul>
+  <li>SDFT's BWT beats SFT's on all three seeds, by 2.3 pp on average. That is the direction the paper reports, but the gap is 7 of 300 item evaluations, and the pre-registered test does not find it significant (seed-blocked paired permutation, p = 0.30).</li>
+  <li>The two methods lose items they got right after stage 1 at similar rates (11.3% vs 10.5%). More of the gap (4 of 7 items) comes from SDFT gaining previously missed items during stage 2.</li>
+  <li>SFT stopped early at a similar accuracy (0.34 vs 0.32) has about the same BWT as SDFT (−1.3 vs −1.0 pp). With 100 items per set, this cannot rule out differences of a few points either way.</li>
+</ul>
+
+<h2>2. BWT tracks where an arm started</h2>
+<figure>
+  <img src="figures/fig_retention_endpoints.png" width="1352" height="714" alt="Tool-Use accuracy after stage 1 and after stage 2 for SFT, SFT-acq50 and SDFT-EMA. Left, seen APIs: SFT falls from 0.383 to 0.350, SFT-acq50 from 0.337 to 0.323, SDFT-EMA from 0.317 to 0.307. Right, unseen APIs: SFT rises from 0.615 to 0.643, SFT-acq50 from 0.595 to 0.605, SDFT-EMA falls from 0.684 to 0.615.">
+  <figcaption>Tool-Use accuracy before and after learning Science. Bold lines are seed means, faint lines single seeds; the two panels use different y-scales. The base model (not plotted) scores 0.27 on seen and 0.39 on unseen APIs.</figcaption>
+</figure>
+<p>On APIs never seen in training the order reverses. SDFT starts highest and loses 6.9 pp (on all three seeds), while SFT gains 2.7 pp. After stage 2 the arms sit close together, at 0.60–0.64 from a starting spread of 0.59–0.68, so endpoint BWT largely reflects where an arm started. Before reading BWT as a method effect, split it into forgotten and gained items and compare against an accuracy-matched control.</p>
+
+<h2>3. General capabilities: protected after the first task, not after the second</h2>
+<figure>
+  <img src="figures/fig_forgetting_bars.png" width="1418" height="1419" alt="Change versus the base model, in percentage points, on six benchmarks. Top, after stage 1: SFT and SFT-acq50 drop about 9 to 10 points on IFEval and 7 to 8 on TruthfulQA, SDFT-EMA drops 6.8 and 1.5. Bottom, after stage 2: IFEval SFT −9.1, SFT-acq50 −11.5, SDFT-EMA −14.7; TruthfulQA −3.6, −3.5, −2.7; HumanEval +1.2, +2.4, +1.4. HellaSwag, MMLU and WinoGrande move by less than 2 points for every arm at both stages.">
+  <figcaption>Change vs the base model after stage 1 (top) and after stage 2 (bottom). Bars are seed means, dots single seeds, whiskers ±1 s.e. of one run. Single-seed ablations, stage 1 only: SDFT with a frozen teacher, and online SFT (the same distillation loss on samples generated by the frozen teacher).</figcaption>
+</figure>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th></th><th colspan="3" style="text-align:center">After stage 1</th><th colspan="3" style="text-align:center">After stage 2</th><th></th></tr>
+    <tr><th>Change vs base (pp)</th><th><span class="sw sft"></span>SFT</th><th><span class="sw acq"></span>acq50</th><th><span class="sw sdft"></span>SDFT</th><th><span class="sw sft"></span>SFT</th><th><span class="sw acq"></span>acq50</th><th><span class="sw sdft"></span>SDFT</th><th>Base model</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>IFEval (prompt, strict)</td><td>−10.4</td><td>−9.4</td><td>−6.8</td><td>−9.1</td><td>−11.5</td><td>−14.7</td><td>56.2</td></tr>
+    <tr><td>TruthfulQA (mc2)</td><td>−7.8</td><td>−7.2</td><td>−1.5</td><td>−3.6</td><td>−3.5</td><td>−2.7</td><td>64.7</td></tr>
+    <tr><td>HumanEval (pass@1)</td><td>−6.5</td><td>−11.8</td><td>+2.2</td><td>+1.2</td><td>+2.4</td><td>+1.4</td><td>64.0</td></tr>
+    <tr><td>HellaSwag</td><td>−1.4</td><td>−1.2</td><td>−0.4</td><td>−1.2</td><td>−1.1</td><td>−0.5</td><td>80.5</td></tr>
+    <tr><td>MMLU</td><td>−0.2</td><td>−0.2</td><td>−0.2</td><td>−0.3</td><td>−0.3</td><td>−0.5</td><td>71.7</td></tr>
+    <tr><td>WinoGrande</td><td>+0.9</td><td>+0.9</td><td>+0.9</td><td>+1.9</td><td>+1.4</td><td>+1.5</td><td>70.9</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">Mean of 3 seeds, lm-eval 0.4.9.1, 0-shot, default prompts (no chat template). Per-seed values are in <a href="https://github.com/kyrylogy/sdft-replication/blob/HEAD/analysis/SUMMARY.md">SUMMARY.md</a>.</p>
+<p>After the first task, SFT damages instruction following and truthfulness, while MMLU, HellaSwag and WinoGrande move by 1.4 pp or less. SDFT's damage is smaller on every task where SFT loses more than 1 pp. The acq50 checkpoint trained for only 0.4 epochs, and its weight update is only 8% larger than SDFT's (Frobenius norm of the LoRA update, ‖ΔW‖<sub>F</sub>: 5.10 vs 4.71), yet it is damaged about as much as full SFT. At this point the difference points to SDFT's training signal, matching the model's own demonstration-conditioned predictions instead of the dataset's tokens, not from learning less of the task or a smaller weight update.</p>
+<p>Learning Science changes the picture. SFT partly recovers, while SDFT's instruction following gets worse: on IFEval every SDFT seed ends below every SFT and acq50 seed. Its TruthfulQA edge shrinks from 6.3 to 1 pp and HumanEval ends level. In this two-task sequence, SDFT's protection of general capabilities does not last to the end.</p>
+
+<h2>4. Overall score and cost</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>After both stages</th><th>Science</th><th>Tool-Use kept</th><th>ACC</th><th>GPU-hours per seed</th></tr></thead>
+  <tbody>
+    <tr><td><span class="sw sft"></span>SFT</td><td>0.573</td><td>0.350</td><td>0.461</td><td>0.80</td></tr>
+    <tr><td><span class="sw acq"></span>SFT-acq50</td><td>0.569</td><td>0.323</td><td>0.446</td><td>–</td></tr>
+    <tr><td><span class="sw sdft"></span>SDFT-EMA</td><td>0.552</td><td>0.307</td><td>0.429</td><td>2.59</td></tr>
+    <tr><td>SFT on both tasks at once (1 seed)</td><td>0.564</td><td>0.370</td><td>0.467</td><td>0.81</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="note">ACC = mean of Science accuracy and kept Tool-Use (holdout) accuracy. GPU-hours: training only, both stages, one H100 NVL. Training on both tasks at once is the usual upper bound for learning them in sequence.</p>
+<p>On the standard continual-learning average, plain SFT scores highest (on 2 of 3 seeds) and comes within 0.6 pp of training on both tasks at once (0.461 vs 0.467), so with LoRA there is little task-level forgetting left for any method to remove. SDFT costs 3.2× SFT's training compute (about 22–23 vs 7 seconds per step).</p>
+
+<h2>Limitations</h2>
+<ul>
+  <li>Small, noisy retention sets: 97–100 items, and 51 of the 100 seen-API items are never solved by the base model or any trained checkpoint (3 of them also appear in the training data with a different label).</li>
+  <li>One accuracy-matched control: a single SFT checkpoint (step 50, near the peak learning rate). All arms share one learning rate, not tuned per arm.</li>
+  <li>General capability is measured without the chat template. The frozen-teacher and online-SFT ablations and the both-tasks-at-once run are single-seed.</li>
+  <li>One model (Qwen2.5-7B-Instruct), one LoRA rank, two tasks, and the EMA is applied to the LoRA factors. Full fine-tuning, where the original paper reports its effect, was not tested.</li>
+</ul>
+
+<h2>Data and reproduction</h2>
+<ul>
+  <li><a href="https://github.com/kyrylogy/sdft-replication/blob/HEAD/analysis/SUMMARY.md"><code>analysis/SUMMARY.md</code></a>: every result in readable tables, by arm, stage and seed.</li>
+  <li><a href="https://github.com/kyrylogy/sdft-replication/tree/HEAD/analysis"><code>analysis/</code></a>: the underlying tables (CSV), per-item statistics (<code>final_stats.txt</code>), update norms, figures.</li>
+  <li><a href="https://github.com/kyrylogy/sdft-replication/tree/HEAD/runs_export"><code>runs_export/</code></a>: per-run records with per-item scores, final-checkpoint model outputs, lm-eval outputs and run configs.</li>
+  <li><a href="https://github.com/kyrylogy/sdft-replication/tree/HEAD/wandb_export"><code>wandb_export/</code></a>: training curves.</li>
+  <li><a href="https://github.com/kyrylogy/sdft-replication/blob/HEAD/RESULTS.md"><code>RESULTS.md</code></a>: which file each number comes from.</li>
+</ul>
+<p>Rebuild the tables (all but the update norms, which need the adapter weights) and the figures from the committed records, on CPU in a couple of minutes:</p>
+<pre><code>python collect_results.py --root runs_export
+python stats_final.py --root runs_export
+python make_figures.py
+python make_summary.py</code></pre>
+
+<footer>
+  Replication of <a href="https://arxiv.org/abs/2601.19897">Self-Distillation Enables Continual Learning</a> (Shenfeld et al., 2026), built on its <a href="https://github.com/idanshen/Self-Distillation">reference code</a>.
+</footer>
+
+</main>
+</body>
+</html>

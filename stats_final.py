@@ -13,12 +13,14 @@ eval sets load deterministically):
      tabulate across-arm spread at stage 1 vs stage 2. If stage-2 training pulls
      every arm to a common level, BWT ~ (attractor - stage1): slope -> -1.
 
-Writes analysis/final_stats.txt (and prints the same).
+Writes analysis/final_stats.txt (and prints the same); --root/--out point it at another
+runs tree and output dir (e.g. an export_runs.py mirror), like collect_results.py.
 
-  .venv/bin/python stats_final.py
+  .venv/bin/python stats_final.py [--root runs] [--out analysis]
 """
 from __future__ import annotations
 
+import argparse
 import random
 import statistics as st
 from collections import defaultdict
@@ -26,7 +28,6 @@ from pathlib import Path
 
 from collect_results import REPO, load_runs, mcnemar_exact
 
-OUT = REPO / "analysis" / "final_stats.txt"
 _lines = []
 
 
@@ -36,8 +37,10 @@ def emit(s=""):
 
 
 def group_of(meta, run):
-    """Arm identity incl. the acq50 control (which shares arm=sft with full SFT)."""
-    return meta["arm"] + ("_acq50" if "acq50" in run else "")
+    """Arm identity incl. the acq50 control. collect_results.arm_key() now returns
+    "sft_acq50" itself; only append the suffix if the meta predates that (never twice)."""
+    arm = meta["arm"]
+    return arm if arm.endswith("_acq50") or "acq50" not in run else arm + "_acq50"
 
 
 def paired_bwt_items(s1, s2):
@@ -58,7 +61,11 @@ def perm_test(diffs, iters=20000, seed=0):
 
 
 def main():
-    runs, acc, _ = load_runs(str(REPO / "runs"))
+    ap = argparse.ArgumentParser(description="Per-sample retention inference -> final_stats.txt")
+    ap.add_argument("--root", default=str(REPO / "runs"))
+    ap.add_argument("--out", default=str(REPO / "analysis"), help="directory for final_stats.txt")
+    args = ap.parse_args()
+    runs, acc, _ = load_runs(args.root)
 
     # chains[group][seed] = {"s1": stage1_run, "s2": stage2_run}
     chains = defaultdict(dict)
@@ -138,9 +145,10 @@ def main():
             s1v, s2v = [m[0] for m in g_means.values()], [m[1] for m in g_means.values()]
             emit(f"  across-arm spread (max-min): stage1={max(s1v)-min(s1v):.4f}  stage2={max(s2v)-min(s2v):.4f}")
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(_lines) + "\n")
-    print(f"\n[write] {OUT.relative_to(REPO)}")
+    out = Path(args.out) / "final_stats.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(_lines) + "\n", newline="\n")   # LF on every OS
+    print(f"\n[write] {out}")
 
 
 if __name__ == "__main__":

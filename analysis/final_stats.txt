@@ -1,0 +1,53 @@
+chains: sdft_ema(3 seeds), sft(3 seeds), sft_acq50(3 seeds)
+
+================ tooluse/holdout ================
+group         seed    acc1    acc2      bwt  0->1  1->0  disc  p_mcnemar
+sdft_ema        42  0.3100  0.3000  -0.0100     3     4     7     1.0000
+sdft_ema      1234  0.3200  0.3200  +0.0000     2     2     4     1.0000
+sdft_ema      2024  0.3200  0.3000  -0.0200     2     4     6     0.6875
+sft             42  0.3900  0.3600  -0.0300     1     4     5     0.3750
+sft           1234  0.3700  0.3400  -0.0300     1     4     5     0.3750
+sft           2024  0.3900  0.3500  -0.0400     1     5     6     0.2188
+sft_acq50       42  0.3300  0.3200  -0.0100     3     4     7     1.0000
+sft_acq50     1234  0.3400  0.3200  -0.0200     3     5     8     0.7266
+sft_acq50     2024  0.3400  0.3300  -0.0100     3     4     7     1.0000
+
+arm comparisons (per-item BWT diff, seeds as blocks, sign-flip permutation):
+  sdft_ema  vs sft      : mean_bwt_diff=+0.0233  n_item_pairs=300  p=0.2964
+  sdft_ema  vs sft_acq50: mean_bwt_diff=+0.0033  n_item_pairs=300  p=1.0000
+  sft       vs sft_acq50: mean_bwt_diff=-0.0200  n_item_pairs=300  p=0.3603
+
+attractor check across 9 chains: BWT = a + b*stage1_acc  ->  slope=-0.358  pearson_r=-0.859
+  (slope near -1, strongly negative r  =>  BWT tracks starting altitude above a common
+   post-stage-2 level, not a method-specific protection)
+  group         stage1_mean  stage2_mean
+  sdft_ema           0.3167       0.3067
+  sft                0.3833       0.3500
+  sft_acq50          0.3367       0.3233
+  across-arm spread (max-min): stage1=0.0667  stage2=0.0433
+
+================ tooluse/eval_data ================
+group         seed    acc1    acc2      bwt  0->1  1->0  disc  p_mcnemar
+sdft_ema        42  0.6701  0.6392  -0.0309     5     8    13     0.5811
+sdft_ema      1234  0.6701  0.5979  -0.0722     5    12    17     0.1435
+sdft_ema      2024  0.7113  0.6082  -0.1031     3    13    16     0.0213
+sft             42  0.5876  0.6495  +0.0619    11     5    16     0.2101
+sft           1234  0.6392  0.6392  +0.0000     9     9    18     1.0000
+sft           2024  0.6186  0.6392  +0.0206     7     5    12     0.7744
+sft_acq50       42  0.5876  0.5567  -0.0309     5     8    13     0.5811
+sft_acq50     1234  0.5876  0.6186  +0.0309     7     4    11     0.5488
+sft_acq50     2024  0.6082  0.6392  +0.0309     7     4    11     0.5488
+
+arm comparisons (per-item BWT diff, seeds as blocks, sign-flip permutation):
+  sdft_ema  vs sft      : mean_bwt_diff=-0.0962  n_item_pairs=291  p=0.0047
+  sdft_ema  vs sft_acq50: mean_bwt_diff=-0.0790  n_item_pairs=291  p=0.0130
+  sft       vs sft_acq50: mean_bwt_diff=+0.0172  n_item_pairs=291  p=0.5894
+
+attractor check across 9 chains: BWT = a + b*stage1_acc  ->  slope=-1.003  pearson_r=-0.835
+  (slope near -1, strongly negative r  =>  BWT tracks starting altitude above a common
+   post-stage-2 level, not a method-specific protection)
+  group         stage1_mean  stage2_mean
+  sdft_ema           0.6838       0.6151
+  sft                0.6151       0.6426
+  sft_acq50          0.5945       0.6048
+  across-arm spread (max-min): stage1=0.0893  stage2=0.0378

@@ -1,5 +1,8 @@
 # Thesis experiments — what to run
 
+> Historical plan, written before the runs. Only Tier 1 (7B) was run, and the acquisition-matched
+> control (SFT-acq50) was added afterwards. What was run and where the results are: [`RESULTS.md`](RESULTS.md).
+
 The runnable plan. Every arm is a config in `configs/experiments/`; run it with
 `GPU=<id> ./run.sh train|eval <cfg>`. Metric definitions: [`METRICS.md`](METRICS.md).
 Harness reference: [`HARNESS.md`](HARNESS.md).

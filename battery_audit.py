@@ -1,18 +1,20 @@
 """C1 provenance audit: did every lm-eval battery run under identical settings, and
 was the SAME metric key read for every run of every task?
 
-The headline general-capability deltas (esp. the 14pp HumanEval SFT-vs-SDFT gap) are
+The headline general-capability deltas (esp. the HumanEval gaps between arms) are
 only meaningful if (a) harness version, few-shot counts, and model_args agree across
 the base anchor and every arm, and (b) collect_results' metric-key fallback resolved
 to the same key everywhere (T11 flagged the fallback as order-dependent).
 
-Reads runs/*/eval/forgetting*/results*.json. No GPU. Exit 1 on any disagreement.
+Reads runs/*/eval/forgetting*/**/results*.json. No GPU. Exit 1 on any disagreement.
+Adapter paths are printed repo-relative, so the report can be committed.
 
   .venv/bin/python battery_audit.py            # human-readable report
 """
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -51,6 +53,12 @@ def audit(root="runs"):
             "model": cfg.get("model"),
             "model_args": cfg.get("model_args"),
             "batch_size": cfg.get("batch_size"),
+            # everything else lm-eval records that can move a score: prompt format, library,
+            # context length, sampling/limits, seeds, base-model revision and dtype
+            "prompting": {k: d.get(k) for k in ("chat_template_sha", "system_instruction_sha",
+                                                "fewshot_as_multiturn", "max_length", "transformers_version")},
+            "run_config": {k: cfg.get(k) for k in ("limit", "gen_kwargs", "random_seed", "numpy_seed",
+                                                   "torch_seed", "fewshot_seed", "model_dtype", "model_sha")},
             "nshot": {k: v for k, v in sorted(nshot.items()) if not k.startswith("mmlu_")},
             "picked_keys": dict(sorted(picked.items())),
             "humaneval_numeric_keys": sorted(k for k, v in (d.get("results", {}).get("humaneval", {}) or {}).items()
@@ -73,21 +81,29 @@ def main():
     # Fields that must be IDENTICAL across every battery for deltas-vs-base to be valid.
     # model_args is excluded (it names the adapter, so it differs by construction) — but
     # we still show it below so a wrong-adapter battery is visible at a glance.
-    for field in ["git_hash", "lm_eval_version", "model", "batch_size", "nshot", "picked_keys"]:
+    for field in ["git_hash", "lm_eval_version", "model", "batch_size", "nshot", "picked_keys",
+                  "prompting", "run_config"]:
         vals = defaultdict(list)
         for r in ok:
             vals[json.dumps(r[field], sort_keys=True)].append(r["run"])
         if len(vals) == 1:
             print(f"  [OK] {field}: {next(iter(vals))}")
+            continue
+        # git_hash is this repo's commit when the battery ran, so batteries run on different
+        # days differ. The settings that change lm-eval's output are the other fields: report
+        # it, and check `git diff <a> <b> -- eval_runner.py` (which builds the lm_eval command).
+        if field == "git_hash":
+            print(f"  [INFO] {field} (repo commit per battery; check eval_runner.py diffs between them):")
         else:
             disagreements += 1
             print(f"  [DISAGREE] {field}:")
-            for v, runs in sorted(vals.items()):
-                print(f"      {v}  <-  {', '.join(sorted(set(runs)))}")
+        for v, runs in sorted(vals.items()):
+            print(f"      {v}  <-  {', '.join(sorted(set(runs)))}")
 
     print("\n[audit] per-file model_args (adapter identity — verify each battery loaded its own run's adapter):")
     for r in ok:
-        print(f"  {r['run']:42} {r['label']:4} {r['model_args']}")
+        # peft=/abs/path/to/repo/runs/<run>/lora_adapter -> peft=runs/<run>/lora_adapter
+        print(f"  {r['run']:42} {r['label']:4} {re.sub(r'=[^=,]*/(?=runs/)', '=', str(r['model_args']))}")
 
     print("\n[audit] humaneval numeric keys present (the picked key must be first-preference, not fallback):")
     for r in ok:

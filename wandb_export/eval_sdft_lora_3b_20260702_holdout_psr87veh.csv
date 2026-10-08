@@ -1,0 +1,2 @@
+_step,_runtime,_timestamp,eval/accuracy,eval/num_total,eval/num_correct
+0,0.29776,1782996878.05365,0.26,100,26

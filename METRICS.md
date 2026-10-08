@@ -1,6 +1,9 @@
 # Metrics — definitions
 
-Every number in the paper comes from `collect_results.py` reading the on-disk run records.
+Every number in the paper traces back to the run records or the W&B export: tables via
+`collect_results.py`, per-item tests via `stats_final.py`, update norms via `adapter_distance.py`,
+compute via `wandb_export/`. A few tests were computed by hand; [`RESULTS.md`](RESULTS.md) maps each
+result to its file and lists those tests.
 This file pins down what each metric means, and — crucially — **which statistic supports
 which claim**, so a reviewer can't accuse you of laundering a per-run p-value into a
 method-level conclusion.
@@ -52,8 +55,8 @@ up front is a one-sentence, large-credibility move.
 - **Multiple comparisons**: the forgetting battery is 6 tasks × several arms, and
   `significance.csv` runs an all-pairs within-stage McNemar per cell — both are **exploratory**
   and its `sig_05_uncorrected` flag is exactly that, **uncorrected**. If you cite any single
-  cell as significant, apply Holm/BH and say so. IFEval is the sensitive probe (it tanks 20+pt
-  while MMLU barely moves) — give it its own panel; carry `*_stderr` (done).
+  cell as significant, apply Holm/BH and say so. IFEval is the sensitive probe (−10 pt for 7B
+  LoRA-SFT while MMLU moves <0.3 pt) — give it its own panel; carry `*_stderr` (done).
 - **`significance.csv` is not the confirmatory test.** It is arm-vs-arm at a *fixed* stage and
   seed (never cross-stage — a stage effect must not masquerade as a method effect). The method
   claim is `method_effect.csv` (per-seed sign consistency); the within-run forgetting claim is

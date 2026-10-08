@@ -1,0 +1,9 @@
+scale,protocol,seed,sdft_ema,sft,diff,n_seeds,sign_consistent
+7b,acquisition,1234,0.32,0.37,-0.05,,
+7b,acquisition,2024,0.32,0.39,-0.07,,
+7b,acquisition,42,0.31,0.39,-0.08,,
+7b,acquisition,MEAN,,,-0.0667,3,True
+7b,retention_bwt,1234,0.0,-0.03,0.03,,
+7b,retention_bwt,2024,-0.02,-0.04,0.02,,
+7b,retention_bwt,42,-0.01,-0.03,0.02,,
+7b,retention_bwt,MEAN,,,0.0233,3,True

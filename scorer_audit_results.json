@@ -1,6 +1,6 @@
 [
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-holdout-base/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-holdout-base/eval_responses.json",
     "n_rows": 100,
     "gold_parse_failed": 0,
     "n_effective_rows": 100,
@@ -69,7 +69,7 @@
     ]
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-holdout-ceiling-smoke/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-holdout-ceiling-smoke/eval_responses.json",
     "n_rows": 3,
     "gold_parse_failed": 0,
     "n_effective_rows": 3,
@@ -86,7 +86,7 @@
     "disagreement_row_indices": []
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-holdout-ceiling/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-holdout-ceiling/eval_responses.json",
     "n_rows": 100,
     "gold_parse_failed": 0,
     "n_effective_rows": 100,
@@ -204,7 +204,7 @@
     ]
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-smoke/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-smoke/eval_responses.json",
     "n_rows": 3,
     "gold_parse_failed": 0,
     "n_effective_rows": 3,
@@ -221,7 +221,7 @@
     "disagreement_row_indices": []
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-teacher-ceiling/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-teacher-ceiling/eval_responses.json",
     "n_rows": 97,
     "gold_parse_failed": 0,
     "n_effective_rows": 97,
@@ -285,7 +285,7 @@
     ]
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct-teacher-smoke/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct-teacher-smoke/eval_responses.json",
     "n_rows": 3,
     "gold_parse_failed": 0,
     "n_effective_rows": 3,
@@ -302,7 +302,7 @@
     "disagreement_row_indices": []
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-instruct/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-instruct/eval_responses.json",
     "n_rows": 97,
     "gold_parse_failed": 0,
     "n_effective_rows": 97,
@@ -495,7 +495,7 @@
     ]
   },
   {
-    "response_file": "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation/baselines/qwen2.5-3b-lora-adapter-smoke/eval_responses.json",
+    "response_file": "baselines/qwen2.5-3b-lora-adapter-smoke/eval_responses.json",
     "n_rows": 3,
     "gold_parse_failed": 0,
     "n_effective_rows": 3,

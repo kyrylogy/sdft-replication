@@ -6,6 +6,8 @@ import os
 import re
 from collections import Counter
 
+REPO = os.path.dirname(os.path.abspath(__file__))
+
 
 # ---------------------------------------------------------------------------
 # CURRENT scorer (copied verbatim from eval_tooluse.py)
@@ -187,7 +189,7 @@ def audit_file(path):
     n_disagreements = fp_current_yes_strict_no + fn_current_no_strict_yes
 
     return {
-        "response_file": path,
+        "response_file": os.path.relpath(path, REPO).replace(os.sep, "/"),   # repo-relative, any OS
         "n_rows": n_rows,
         "gold_parse_failed": gold_parse_failed,
         "n_effective_rows": n_eff,
@@ -207,7 +209,7 @@ def audit_file(path):
 
 
 def main():
-    root = "/Users/kyrylogy/Projects/University/WS25/Thesis/Self-Distillation"
+    root = REPO
     pattern = os.path.join(root, "baselines", "*", "eval_responses.json")
     files = sorted(glob.glob(pattern))
     print(f"Found {len(files)} eval_responses.json files:")

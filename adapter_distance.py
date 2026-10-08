@@ -19,6 +19,7 @@ Usage:
     python adapter_distance.py --glob 'runs/*_7b_tooluse_s1_seed*/lora_adapter'
     python adapter_distance.py --glob '...' --csv analysis/adapter_distance.csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,7 +34,9 @@ import torch
 from safetensors.torch import load_file
 
 # base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight -> (prefix, 'A')
-_LORA_RE = re.compile(r"^(?P<mod>.+)\.lora_(?P<which>[AB])\.(?:weight|default\.weight)$")
+_LORA_RE = re.compile(
+    r"^(?P<mod>.+)\.lora_(?P<which>[AB])\.(?:weight|default\.weight)$"
+)
 
 
 def _scale(adapter_dir: Path) -> tuple[float, int, int]:
@@ -41,7 +44,7 @@ def _scale(adapter_dir: Path) -> tuple[float, int, int]:
     r = int(cfg["r"])
     alpha = float(cfg["lora_alpha"])
     if cfg.get("use_rslora"):
-        return alpha / (r ** 0.5), r, int(alpha)
+        return alpha / (r**0.5), r, int(alpha)
     return alpha / r, r, int(alpha)
 
 
@@ -62,17 +65,17 @@ def adapter_norm(adapter_dir: str | Path):
     for mod, ab in pairs.items():
         if "A" not in ab or "B" not in ab:
             continue
-        A = ab["A"].to(torch.float64)   # [r, in]
-        B = ab["B"].to(torch.float64)   # [out, r]
-        gA = A @ A.T                    # [r, r]
-        gB = B.T @ B                    # [r, r]
-        sq = float((gB * gA).sum()) * (scale ** 2)
-        sq = max(sq, 0.0)               # guard fp noise on a zero-init B
-        per_module[mod] = sq ** 0.5
+        A = ab["A"].to(torch.float64)  # [r, in]
+        B = ab["B"].to(torch.float64)  # [out, r]
+        gA = A @ A.T  # [r, r]
+        gB = B.T @ B  # [r, r]
+        sq = float((gB * gA).sum()) * (scale**2)
+        sq = max(sq, 0.0)  # guard fp noise on a zero-init B
+        per_module[mod] = sq**0.5
         total_sq += sq
 
     meta = {"r": r, "alpha": alpha, "scale": scale, "n_modules": len(per_module)}
-    return total_sq ** 0.5, per_module, meta
+    return total_sq**0.5, per_module, meta
 
 
 def _group(mod: str) -> str:
@@ -86,7 +89,9 @@ def main():
     ap.add_argument("adapters", nargs="*", help="adapter directories")
     ap.add_argument("--glob", help="glob pattern for adapter dirs")
     ap.add_argument("--csv", help="write a per-adapter CSV here")
-    ap.add_argument("--by-module", action="store_true", help="also print per-projection breakdown")
+    ap.add_argument(
+        "--by-module", action="store_true", help="also print per-projection breakdown"
+    )
     a = ap.parse_args()
 
     dirs = list(a.adapters)
@@ -106,14 +111,16 @@ def main():
             print(f"{'SKIP':>12}   {d}   ({type(e).__name__})")
             continue
         rows.append({"adapter": d, "frobenius": round(total, 4), **meta})
-        print(f"{total:12.4f}   {d}   (r={meta['r']} alpha={meta['alpha']} "
-              f"scale={meta['scale']:.2f} modules={meta['n_modules']})")
+        print(
+            f"{total:12.4f}   {d}   (r={meta['r']} alpha={meta['alpha']} "
+            f"scale={meta['scale']:.2f} modules={meta['n_modules']})"
+        )
         if a.by_module:
             agg: dict[str, float] = defaultdict(float)
             for mod, v in per_mod.items():
-                agg[_group(mod)] += v ** 2
+                agg[_group(mod)] += v**2
             for g, sq in sorted(agg.items(), key=lambda kv: -kv[1]):
-                print(f"        {g:12} {sq ** 0.5:10.4f}")
+                print(f"        {g:12} {sq**0.5:10.4f}")
 
     if bad:
         print(f"\n[warn] {len(bad)} adapter(s) unreadable — likely an incomplete copy:")

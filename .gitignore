@@ -18,3 +18,16 @@ bsub_outputs/
 data/**/cache-*.arrow
 # config-driven run outputs (adapters/checkpoints/eval); records live in resolved_config.yaml
 runs/
+
+# local-only files that are not part of the repo
+logs/
+.pytest_cache/
+*.tar.gz
+analysis_*/
+# uv scaffolding on the laptop (the project environment is requirements.txt)
+/main.py
+/pyproject.toml
+/uv.lock
+/.python-version
+# thesis drafts stay private until submission
+sdft_lora_thesis*.md

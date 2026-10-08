@@ -1,5 +1,8 @@
 # Running on the cluster — the operational guide
 
+> Historical runbook from the shared GPU server: paths, GPU numbers and venvs are specific to that
+> machine. What was run and where the results are: [`RESULTS.md`](RESULTS.md).
+
 How to actually launch, keep alive, monitor, and troubleshoot the experiments on a shared
 GPU box. Pairs with [`EXPERIMENTS.md`](EXPERIMENTS.md) (what to run) and [`HARNESS.md`](HARNESS.md)
 (how the system works).

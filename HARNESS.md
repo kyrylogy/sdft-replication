@@ -82,14 +82,20 @@ After runs exist, turn scattered JSON into paper tables and figures:
 
 ```bash
 python collect_results.py                 # runs/ -> analysis/*.csv
+python stats_final.py                     # runs/ -> analysis/final_stats.txt (per-item tests)
 python make_figures.py                    # analysis/*.csv -> analysis/figures/*.{png,pdf}
+python make_summary.py                    # analysis/*.csv -> analysis/SUMMARY.md (all results, readable)
+rm -rf runs_export && python export_runs.py   # runs/ -> runs_export/ (committable records, no weights)
 ```
+
+[`RESULTS.md`](RESULTS.md) maps each result to its file and shows how to rebuild the tables,
+`final_stats.txt` and the figures from `runs_export/`.
 
 `collect_results.py` emits `results_long.csv` (raw), `retention.csv` (continual forgetting,
 vs stage-1), `forgetting.csv` (general, per lm-eval task), `gap_closed.csv`, `significance.csv`
 (McNemar between arms), `aggregate.csv` (seed mean±std), and `runs_index.csv` (matrix coverage).
-`make_figures.py` renders the forgetting curve, acquisition-vs-forgetting tradeoff, scale trend,
-and per-task forgetting bars — each arm a fixed colour+marker+linestyle (colourblind- and
+`make_figures.py` renders the forgetting curve, acquisition-vs-forgetting tradeoff, retention
+endpoints, per-task forgetting bars, and a scale trend once two scales have data — each arm a fixed colour+marker+linestyle (colourblind- and
 greyscale-safe). **Metric definitions are in [`METRICS.md`](METRICS.md)** — read it before quoting
 a number (continual retention is measured vs the stage-1 level, never base).
 

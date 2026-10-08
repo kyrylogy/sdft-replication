@@ -11,7 +11,8 @@ Statistics are applied at the level the claim lives at:
 Emits: results_long, runs_index, retention, continual_metrics, method_effect, forgetting,
 gap_closed, significance, aggregate, and pairing_issues (invariant violations — a retention
 or forgetting row is EXCLUDED, not silently subtracted, if its two sides disagree on
-scale / seed / scorer / eval-set / num_fewshot).
+scale / seed / scorer / eval-set / num_fewshot; a method_effect seed is EXCLUDED if more
+than one run claims the same scale/seed/arm).
 
 Usage: python collect_results.py [--root runs] [--out analysis] [--strict]
 """
@@ -32,15 +33,24 @@ REPO = Path(__file__).resolve().parent
 
 LMEVAL_PRIMARY = ["acc_norm,none", "acc,none", "mc2,none", "exact_match,none",
                   "exact_match,strict-match", "prompt_level_strict_acc,none",
-                  "inst_level_strict_acc,none", "pass@1,none"]
+                  "inst_level_strict_acc,none", "pass@1,none",
+                  "pass@1,create_test"]   # lm-eval 0.4.x humaneval: filter is "create_test", not "none"
 
-# Arm identity (fixed), so SDFT-EMA vs SFT pairing is unambiguous.
-def arm_key(objective, teacher):
+# Arm identity (fixed), so SDFT-EMA vs SFT pairing is unambiguous. The acquisition-matched
+# control (an SFT stage-1 checkpoint promoted to runs/*acq50*, then continued on stage 2) is
+# its own arm: its resolved_config.yaml is a copy of the parent SFT run's, so the run name is
+# the only marker. Same rule as stats_final.group_of(). The joint-training ceiling (data.dataset
+# joint) is a reference line, not an arm: "sft_joint", so it never pairs with or replaces SFT.
+def arm_key(objective, teacher, run="", dataset=None):
     if objective == "online_sft":
-        return "online_sft"
-    if objective == "sdft":
-        return "sdft_ema" if teacher == "ema" else "sdft_frozen"
-    return "sft"
+        arm = "online_sft"
+    elif objective == "sdft":
+        arm = "sdft_ema" if teacher == "ema" else "sdft_frozen"
+    else:
+        arm = "sft"
+    if dataset == "joint":
+        return arm + "_joint"
+    return arm + ("_acq50" if "acq50" in (run or "") else "")
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +62,8 @@ def _meta(cfg, run_dir):
     init = d.get("init_adapter") or d.get("init_checkpoint")
     return {
         "run": run_dir.name, "objective": m.get("objective"), "tuning": m.get("tuning"),
-        "teacher": m.get("teacher"), "arm": arm_key(m.get("objective"), m.get("teacher")),
+        "teacher": m.get("teacher"),
+        "arm": arm_key(m.get("objective"), m.get("teacher"), run_dir.name, d.get("dataset")),
         "scale": mo.get("scale"), "dataset": d.get("dataset"), "stage": d.get("stage"),
         "seed": t.get("seed"), "scorer": cfg.get("eval", {}).get("scorer"),
         "git_sha": (prov.get("git_sha") or "")[:8],
@@ -92,7 +103,7 @@ def load_runs(root):
         meta = _meta(cfg, run_dir)
         runs.append((run_dir, meta))
 
-        for rj in run_dir.glob("eval/*/*/eval_results.json"):
+        for rj in sorted(run_dir.glob("eval/*/*/eval_results.json")):   # sorted: same rows on any OS
             ckpt = rj.parent.parent.name
             edset, _, eset = rj.parent.name.partition("_")
             try:
@@ -106,7 +117,7 @@ def load_runs(root):
                 "ci_lo": w[0], "ci_hi": w[1], "teacher_ceiling": r.get("teacher_ceiling", False),
                 "per_sample": r.get("per_sample_scores"), "path": str(rj)}
 
-        for rj in run_dir.glob("eval/forgetting*/**/results*.json"):
+        for rj in sorted(run_dir.glob("eval/forgetting*/**/results*.json")):
             label = "forgetting_base" if "forgetting_base" in str(rj) else "forgetting"
             try:
                 results = json.loads(rj.read_text()).get("results", {})
@@ -220,7 +231,10 @@ def main():
                                "eval_set": f"{edset}/{eset}", "problem": "; ".join(bad)})
                 excluded_pairs.add((m["run"], m["stage1_run"]))
                 continue
-            b01, c10, ndisc, p = mcnemar_exact(s1["per_sample"], s2["per_sample"])
+            if s1["per_sample"] and s2["per_sample"]:
+                b01, c10, ndisc, p = mcnemar_exact(s1["per_sample"], s2["per_sample"])
+            else:   # no per-item scores: not computable, rather than "0 items changed, p=1"
+                b01 = c10 = ndisc = p = None
             ret.append({"arm": m["run"], "arm_id": m["arm"], "stage1_run": m["stage1_run"],
                         "scale": m["scale"], "seed": m["seed"], "eval_set": f"{edset}/{eset}",
                         "n": s2["n"], "acquisition": round(s1["accuracy"], 4),
@@ -228,8 +242,9 @@ def main():
                         "bwt": round(s2["accuracy"] - s1["accuracy"], 4),
                         "retention_abs": round(s2["accuracy"] - s1["accuracy"], 4),
                         "retention_pct": round(100 * s2["accuracy"] / s1["accuracy"], 1),
-                        "forgot": c10, "gained": b01, "n_discordant": ndisc, "mcnemar_p": round(p, 4),
-                        "sig_05": p < 0.05})
+                        "forgot": c10, "gained": b01, "n_discordant": ndisc,
+                        "mcnemar_p": None if p is None else round(p, 4),
+                        "sig_05": None if p is None else p < 0.05})
         # continual metrics: ACC = mean(science acq, tool-use retention) — both stage-2, always safe.
         # bwt_tooluse needs the stage-1 pair, so it INHERITS the retention exclusion (no leak): a
         # pair dropped from retention.csv yields bwt_tooluse=None here, not a contaminated number.
@@ -254,19 +269,26 @@ def main():
 
     # --- method_effect: per-seed SDFT-EMA minus SFT, with sign consistency ---
     def diffs(getter, protocol):
-        by_scale = defaultdict(dict)   # scale -> seed -> {arm_id: value}
+        by_scale = defaultdict(dict)   # scale -> seed -> {arm_id: [values]}
         for row in getter:
-            by_scale[row["scale"]].setdefault(row["seed"], {})[row["arm_id"]] = row["value"]
+            by_scale[row["scale"]].setdefault(row["seed"], defaultdict(list))[row["arm_id"]].append(row["value"])
         rows = []
         for scale, seeds in by_scale.items():
             ds = []
             for seed, arms in sorted(seeds.items(), key=lambda x: str(x[0])):
-                if "sdft_ema" in arms and "sft" in arms:
-                    d = arms["sdft_ema"] - arms["sft"]
-                    ds.append(d)
-                    rows.append({"scale": scale, "protocol": protocol, "seed": seed,
-                                 "sdft_ema": round(arms["sdft_ema"], 4), "sft": round(arms["sft"], 4),
-                                 "diff": round(d, 4)})
+                if not (arms.get("sdft_ema") and arms.get("sft")):
+                    continue
+                if len(arms["sdft_ema"]) > 1 or len(arms["sft"]) > 1:
+                    # >1 run claims this (scale, seed, arm): exclude + log, never let dict order pick one
+                    issues.append({"kind": "method_effect", "arm": f"{scale}/seed {seed}", "vs": protocol,
+                                   "eval_set": "tooluse/holdout",
+                                   "problem": f"{len(arms['sdft_ema'])} sdft_ema / {len(arms['sft'])} sft runs in one cell"})
+                    continue
+                d = arms["sdft_ema"][0] - arms["sft"][0]
+                ds.append(d)
+                rows.append({"scale": scale, "protocol": protocol, "seed": seed,
+                             "sdft_ema": round(arms["sdft_ema"][0], 4), "sft": round(arms["sft"][0], 4),
+                             "diff": round(d, 4)})
             if ds:
                 rows.append({"scale": scale, "protocol": protocol, "seed": "MEAN",
                              "diff": round(statistics.mean(ds), 4), "n_seeds": len(ds),
@@ -274,7 +296,7 @@ def main():
         return rows
 
     acq_pts = [{"scale": r["scale"], "seed": r["seed"], "arm_id": r["arm"], "value": r["accuracy"]}
-               for r in acc.values() if r["stage"] == 1 and r["checkpoint"] == "final"
+               for r in acc.values() if r["stage"] == 1 and r["dataset"] == "tooluse" and r["checkpoint"] == "final"
                and r["eval_dataset"] == "tooluse" and r["eval_set"] == "holdout" and r["accuracy"] is not None]
     ret_pts = [{"scale": r["scale"], "seed": r["seed"], "arm_id": r["arm_id"], "value": r["retention_abs"]}
                for r in ret if r["eval_set"] == "tooluse/holdout"]

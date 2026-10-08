@@ -2,9 +2,9 @@ arm,arm_id,scale,seed,science_acc,tooluse_retained,bwt_tooluse,ACC
 sdft_ema_lora_7b_science_s2_seed1234,sdft_ema,7b,1234,0.57,0.32,0.0,0.445
 sdft_ema_lora_7b_science_s2_seed2024,sdft_ema,7b,2024,0.5404,0.3,-0.02,0.4202
 sdft_ema_lora_7b_science_s2_seed42,sdft_ema,7b,42,0.5444,0.3,-0.01,0.4222
-sft_lora_7b_science_s2_acq50_seed1234,sft,7b,1234,0.5858,0.32,-0.02,0.4529
-sft_lora_7b_science_s2_acq50_seed2024,sft,7b,2024,0.5483,0.33,-0.01,0.4392
-sft_lora_7b_science_s2_acq50_seed42,sft,7b,42,0.574,0.32,-0.01,0.447
+sft_lora_7b_science_s2_acq50_seed1234,sft_acq50,7b,1234,0.5858,0.32,-0.02,0.4529
+sft_lora_7b_science_s2_acq50_seed2024,sft_acq50,7b,2024,0.5483,0.33,-0.01,0.4392
+sft_lora_7b_science_s2_acq50_seed42,sft_acq50,7b,42,0.574,0.32,-0.01,0.447
 sft_lora_7b_science_s2_seed1234,sft,7b,1234,0.5483,0.34,-0.03,0.4442
 sft_lora_7b_science_s2_seed2024,sft,7b,2024,0.5917,0.35,-0.04,0.4709
 sft_lora_7b_science_s2_seed42,sft,7b,42,0.5779,0.36,-0.03,0.469

@@ -1,0 +1,67 @@
+retention_gate:
+  enabled: true
+  task: tooluse
+  set: holdout
+  expected_accuracy: null
+  tolerance: 0.02
+  structural: true
+--
+  retention_gate:
+    loaded_accuracy: 0.34
+    expected_accuracy: 0.34
+    n: 100
+  data_fingerprint:
+    train:
+      sha256: 760dd2ffb3a4430b
+--
+retention_gate:
+  enabled: true
+  task: tooluse
+  set: holdout
+  expected_accuracy: null
+  tolerance: 0.02
+  structural: true
+--
+  retention_gate:
+    loaded_accuracy: 0.34
+    expected_accuracy: 0.34
+    n: 100
+  data_fingerprint:
+    train:
+      sha256: 760dd2ffb3a4430b
+--
+retention_gate:
+  enabled: true
+  task: tooluse
+  set: holdout
+  expected_accuracy: null
+  tolerance: 0.02
+  structural: true
+--
+  retention_gate:
+    loaded_accuracy: 0.33
+    expected_accuracy: 0.33
+    n: 100
+  data_fingerprint:
+    train:
+      sha256: 760dd2ffb3a4430b
+[gate] behavioral: loaded tooluse/holdout acc=0.3200 (n=100); expected=0.32
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3900 (n=100); expected=0.39
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3700 (n=100); expected=0.37
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3900 (n=100); expected=0.39
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3300 (n=100); expected=0.33
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3400 (n=100); expected=0.34
+[gate] PASS: within tolerance 0.02
+[gate] structural OK: 392 trainable LoRA tensors, B non-zero
+[gate] behavioral: loaded tooluse/holdout acc=0.3400 (n=100); expected=0.34
+[gate] PASS: within tolerance 0.02

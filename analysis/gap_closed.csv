@@ -7,6 +7,7 @@ sdft_ema_lora_7b_tooluse_s1_seed1234,7b,tooluse/holdout,0.27,0.32,0.52,20.0,desc
 sdft_ema_lora_7b_tooluse_s1_seed2024,7b,tooluse/holdout,0.27,0.32,0.52,20.0,descriptive
 sdft_ema_lora_7b_tooluse_s1_seed42,7b,tooluse/holdout,0.27,0.31,0.52,16.0,descriptive
 sdft_frozen_lora_7b_tooluse_s1_seed42,7b,tooluse/holdout,0.27,0.32,0.52,20.0,descriptive
+sft_lora_7b_joint_s1_seed42,7b,tooluse/holdout,0.27,0.37,0.52,40.0,descriptive
 sft_lora_7b_science_s2_acq50_seed1234,7b,tooluse/holdout,0.27,0.32,0.52,20.0,descriptive
 sft_lora_7b_science_s2_acq50_seed2024,7b,tooluse/holdout,0.27,0.33,0.52,24.0,descriptive
 sft_lora_7b_science_s2_acq50_seed42,7b,tooluse/holdout,0.27,0.32,0.52,20.0,descriptive

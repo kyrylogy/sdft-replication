@@ -1,0 +1,61 @@
+[audit] 21 battery result files (1 base anchor)
+  [INFO] git_hash (repo commit per battery; check eval_runner.py diffs between them):
+      "173d61b"  <-  sdft_frozen_lora_7b_tooluse_s1_seed42
+      "e3b75ca"  <-  sdft_ema_lora_7b_science_s2_seed1234, sdft_ema_lora_7b_science_s2_seed2024, sdft_ema_lora_7b_science_s2_seed42, sft_lora_7b_science_s2_acq50_seed1234, sft_lora_7b_science_s2_acq50_seed2024, sft_lora_7b_science_s2_acq50_seed42, sft_lora_7b_science_s2_seed1234, sft_lora_7b_science_s2_seed2024, sft_lora_7b_science_s2_seed42
+      "e86341c"  <-  sft_lora_7b_tooluse_s1_acq50_seed1234, sft_lora_7b_tooluse_s1_acq50_seed2024, sft_lora_7b_tooluse_s1_acq50_seed42
+      "fac3fbd"  <-  online_sft_lora_7b_tooluse_s1_seed42, sdft_ema_lora_7b_tooluse_s1_seed1234, sdft_ema_lora_7b_tooluse_s1_seed2024, sdft_ema_lora_7b_tooluse_s1_seed42, sft_lora_7b_tooluse_s1, sft_lora_7b_tooluse_s1_seed1234, sft_lora_7b_tooluse_s1_seed2024, sft_lora_7b_tooluse_s1_seed42
+  [OK] lm_eval_version: "0.4.9.1"
+  [OK] model: "hf"
+  [OK] batch_size: "8"
+  [OK] nshot: {"hellaswag": 0, "humaneval": 0, "ifeval": 0, "truthfulqa_mc2": 0, "winogrande": 0}
+  [OK] picked_keys: {"hellaswag": "acc_norm,none", "humaneval": "pass@1,create_test", "ifeval": "prompt_level_strict_acc,none", "mmlu": "acc,none", "truthfulqa_mc2": "acc,none", "winogrande": "acc,none"}
+  [OK] prompting: {"chat_template_sha": null, "fewshot_as_multiturn": false, "max_length": 32768, "system_instruction_sha": null, "transformers_version": "4.57.1"}
+  [OK] run_config: {"fewshot_seed": 1234, "gen_kwargs": null, "limit": null, "model_dtype": "torch.bfloat16", "model_sha": "a09a35458c702b33eeacc393d103063234e8bc28", "numpy_seed": 1234, "random_seed": 0, "torch_seed": 1234}
+
+[audit] per-file model_args (adapter identity — verify each battery loaded its own run's adapter):
+  online_sft_lora_7b_tooluse_s1_seed42       arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/online_sft_lora_7b_tooluse_s1_seed42/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_science_s2_seed1234       arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_science_s2_seed1234/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_science_s2_seed2024       arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_science_s2_seed2024/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_science_s2_seed42         arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_science_s2_seed42/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_tooluse_s1_seed1234       arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_tooluse_s1_seed1234/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_tooluse_s1_seed2024       arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_tooluse_s1_seed2024/lora_adapter,dtype=bfloat16
+  sdft_ema_lora_7b_tooluse_s1_seed42         arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_ema_lora_7b_tooluse_s1_seed42/lora_adapter,dtype=bfloat16
+  sdft_frozen_lora_7b_tooluse_s1_seed42      arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sdft_frozen_lora_7b_tooluse_s1_seed42/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_acq50_seed1234      arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_acq50_seed1234/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_acq50_seed2024      arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_acq50_seed2024/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_acq50_seed42        arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_acq50_seed42/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_seed1234            arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_seed1234/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_seed2024            arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_seed2024/lora_adapter,dtype=bfloat16
+  sft_lora_7b_science_s2_seed42              arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_science_s2_seed42/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1                     base pretrained=Qwen/Qwen2.5-7B-Instruct,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_acq50_seed1234      arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_acq50_seed1234/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_acq50_seed2024      arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_acq50_seed2024/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_acq50_seed42        arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_acq50_seed42/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_seed1234            arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_seed1234/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_seed2024            arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_seed2024/lora_adapter,dtype=bfloat16
+  sft_lora_7b_tooluse_s1_seed42              arm  pretrained=Qwen/Qwen2.5-7B-Instruct,peft=runs/sft_lora_7b_tooluse_s1_seed42/lora_adapter,dtype=bfloat16
+
+[audit] humaneval numeric keys present (the picked key must be first-preference, not fallback):
+  online_sft_lora_7b_tooluse_s1_seed42       picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_science_s2_seed1234       picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_science_s2_seed2024       picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_science_s2_seed42         picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_tooluse_s1_seed1234       picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_tooluse_s1_seed2024       picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_ema_lora_7b_tooluse_s1_seed42         picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sdft_frozen_lora_7b_tooluse_s1_seed42      picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_acq50_seed1234      picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_acq50_seed2024      picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_acq50_seed42        picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_seed1234            picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_seed2024            picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_science_s2_seed42              picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1                     picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_acq50_seed1234      picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_acq50_seed2024      picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_acq50_seed42        picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_seed1234            picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_seed2024            picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+  sft_lora_7b_tooluse_s1_seed42              picked=pass@1,create_test all=['pass@1,create_test', 'pass@1_stderr,create_test']
+
+[audit] CLEAN — all batteries comparable
